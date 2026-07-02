@@ -48,7 +48,19 @@ export function setupHooks() {
       },
       async (e, c) => {
         if (e == "confirm") {
-          await invoke("open_process_logs", { gameId: event.payload });
+          try {
+            await invoke("open_process_logs", { gameId: event.payload });
+          } catch (err) {
+            createModal(
+              ModalType.Notification,
+              {
+                title: "Couldn't open the log directory",
+                description: `Drop failed to open the log directory: "${err}"`,
+                buttonText: "Close",
+              },
+              (e, c) => c()
+            );
+          }
         }
         c();
       }

@@ -55,7 +55,10 @@
             >
               <circle cx="1" cy="1" r="1" />
             </svg>
-            <a href="https://discord.gg/NHx46XKJWA" target="_blank"
+            <a
+              href="https://discord.gg/NHx46XKJWA"
+              target="_blank"
+              @click.prevent="openExternalLink('https://discord.gg/NHx46XKJWA')"
               >Support Discord</a
             >
           </nav>

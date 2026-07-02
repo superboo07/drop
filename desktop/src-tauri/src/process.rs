@@ -9,6 +9,7 @@ use log::info;
 use serde::Serialize;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
+use utils::external_open::open_externally;
 
 #[tauri::command]
 pub fn get_launch_options(id: String) -> Result<Vec<LaunchOption>, ProcessError> {
@@ -64,34 +65,12 @@ pub fn open_process_logs(game_id: String, app_handle: AppHandle) -> Result<(), P
     drop(process_manager_lock);
     info!("opening log directory: {}", dir.display());
 
-    // On Linux, the AppImage bundles its own (older) xdg-utils, and the
-    // AppRun-set PATH puts that bundled xdg-open ahead of the system one. The
-    // bundled xdg-open doesn't know about Plasma 6's naming and calls
-    // "kde-open6", which doesn't exist there (only "kde-open"/"kde-open5")
-    // — it fails silently and xdg-open still exits 0. The AppRun-set
-    // LD_LIBRARY_PATH (for our bundled webkit2gtk/GTK libs) would also break
-    // any native opener helper it did manage to launch. So we bypass the
-    // bundled xdg-open by invoking the system's copy directly with a clean
-    // LD_LIBRARY_PATH, falling back to the opener plugin if that binary isn't
-    // there (e.g. a distro without xdg-utils at that path).
-    #[cfg(target_os = "linux")]
-    let result = match std::process::Command::new("/usr/bin/xdg-open")
-        .arg(&dir)
-        .env_remove("LD_LIBRARY_PATH")
-        .spawn()
-    {
-        Ok(_) => Ok(()),
-        Err(_) => app_handle
+    let result = open_externally(&dir.display().to_string(), || {
+        app_handle
             .opener()
             .open_path(dir.display().to_string(), None::<&str>)
-            .map_err(|v| ProcessError::OpenerError(Arc::new(v))),
-    };
-
-    #[cfg(not(target_os = "linux"))]
-    let result = app_handle
-        .opener()
-        .open_path(dir.display().to_string(), None::<&str>)
-        .map_err(|v| ProcessError::OpenerError(Arc::new(v)));
+            .map_err(|v| ProcessError::OpenerError(Arc::new(v)))
+    });
 
     match &result {
         Ok(()) => info!("open_process_logs succeeded"),

@@ -7,6 +7,7 @@ use remote::requests::{generate_url, make_authenticated_get};
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
+use utils::external_open::open_externally;
 
 use crate::AppState;
 
@@ -74,7 +75,7 @@ pub fn get_autostart_enabled(app: AppHandle) -> Result<bool, tauri_plugin_autost
 
 #[tauri::command]
 pub fn open_fs(path: String, app_handle: AppHandle) -> Result<(), tauri_plugin_opener::Error> {
-    app_handle.opener().open_path(path, None::<&str>)
+    open_externally(&path, || app_handle.opener().open_path(&path, None::<&str>))
 }
 
 

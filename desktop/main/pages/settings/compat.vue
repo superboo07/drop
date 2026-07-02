@@ -144,6 +144,7 @@
           <a
             href="https://github.com/DavidoTek/ProtonUp-Qt"
             target="_blank"
+            @click.prevent="openExternalLink('https://github.com/DavidoTek/ProtonUp-Qt')"
             class="text-blue-400 hover:text-blue-500"
             >ProtonUp-Qt</a
           >

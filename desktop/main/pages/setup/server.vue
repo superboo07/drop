@@ -66,6 +66,7 @@
         <a
           href="https://github.com/Drop-OSS"
           target="_blank"
+          @click.prevent="openExternalLink('https://github.com/Drop-OSS')"
           class="font-semibold leading-6 text-blue-600 hover:text-blue-500"
           >Host your own instance -></a
         >

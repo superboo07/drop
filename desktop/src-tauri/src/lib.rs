@@ -254,6 +254,8 @@ pub fn run() {
             fetch_game_status,
             fetch_game_version_options,
             update_game_configuration,
+            #[cfg(target_os = "linux")]
+            add_to_steam,
             // Downloads
             download_game,
             resume_download,
@@ -352,6 +354,21 @@ pub fn run() {
                             handle.clone(),
                             url.path().to_string(),
                         ));
+                    } else if let Some("launch") = url.host_str() {
+                        // Used by the "Add to Steam" non-Steam shortcut:
+                        // Steam launches Drop with this as an argument
+                        // (handed off to us here as a deep link), starting
+                        // the game's first launch option.
+                        let game_id = url.path().trim_start_matches('/').to_string();
+                        if game_id.is_empty() {
+                            warn!("drop://launch/ deep link missing a game id");
+                        } else {
+                            info!("launching game {game_id} via deep link");
+                            if let Err(e) = ::process::PROCESS_MANAGER.lock().launch_process(game_id, 0)
+                            {
+                                warn!("Failed to launch game via deep link: {e}");
+                            }
+                        }
                     }
                 });
                 let open_menu_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>)

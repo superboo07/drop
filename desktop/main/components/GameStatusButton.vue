@@ -43,7 +43,7 @@
         leave-to-class="transform opacity-0 scale-95"
       >
         <MenuItems
-          class="absolute right-0 z-[500] mt-2 w-32 origin-top-right rounded-md bg-zinc-900 shadow-lg ring-1 ring-zinc-100/5 focus:outline-none"
+          class="absolute right-0 z-[500] mt-2 w-40 origin-top-right rounded-md bg-zinc-900 shadow-lg ring-1 ring-zinc-100/5 focus:outline-none"
         >
           <div class="py-1">
             <MenuItem v-slot="{ active }">
@@ -53,7 +53,7 @@
                   active
                     ? 'bg-zinc-800 text-zinc-100 outline-none'
                     : 'text-zinc-400',
-                  'w-full px-4 py-2 text-sm inline-flex justify-between',
+                  'w-full px-4 py-2 text-sm inline-flex items-center justify-between',
                 ]"
               >
                 Install
@@ -68,11 +68,25 @@
                   active
                     ? 'bg-zinc-800 text-zinc-100 outline-none'
                     : 'text-zinc-400',
-                  'w-full px-4 py-2 text-sm inline-flex justify-between',
+                  'w-full px-4 py-2 text-sm inline-flex items-center justify-between',
                 ]"
               >
                 Options
                 <Cog6ToothIcon class="size-5" />
+              </button>
+            </MenuItem>
+            <MenuItem v-if="showAddToSteam" v-slot="{ active }">
+              <button
+                @click="() => emit('addToSteam')"
+                :class="[
+                  active
+                    ? 'bg-zinc-800 text-zinc-100 outline-none'
+                    : 'text-zinc-400',
+                  'w-full px-4 py-2 text-sm inline-flex items-center justify-between',
+                ]"
+              >
+                Add to Steam
+                <ComputerDesktopIcon class="size-5" />
               </button>
             </MenuItem>
             <MenuItem v-slot="{ active }">
@@ -82,7 +96,7 @@
                   active
                     ? 'bg-zinc-800 text-zinc-100 outline-none'
                     : 'text-zinc-400',
-                  'w-full inline-flex px-4 py-2 text-sm justify-between',
+                  'w-full inline-flex items-center px-4 py-2 text-sm justify-between',
                 ]"
               >
                 Uninstall
@@ -114,8 +128,13 @@ import {
   type GameStatus,
 } from "~/types.js";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/vue";
-import { Cog6ToothIcon, TrashIcon } from "@heroicons/vue/24/outline";
+import {
+  Cog6ToothIcon,
+  ComputerDesktopIcon,
+  TrashIcon,
+} from "@heroicons/vue/24/outline";
 import { ArrowsRightLeftIcon, ArrowUpTrayIcon } from "@heroicons/vue/24/solid";
+import { platform } from "@tauri-apps/plugin-os";
 
 const props = defineProps<{ status: GameStatus }>();
 const emit = defineEmits<{
@@ -126,7 +145,10 @@ const emit = defineEmits<{
   (e: "kill"): void;
   (e: "options"): void;
   (e: "resume"): void;
+  (e: "addToSteam"): void;
 }>();
+
+const currentPlatform = platform();
 
 interface StatusStyleData {
   style: string;
@@ -181,6 +203,10 @@ const showOptions = computed(
     showDropdown.value &&
     props.status.type === "Installed" &&
     props.status.install_type.type !== InstalledType.PartiallyInstalled,
+);
+
+const showAddToSteam = computed(
+  () => showOptions.value && currentPlatform === "linux",
 );
 
 const styles: { [key in EmptyGameStatusEnum]: string } = {

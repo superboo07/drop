@@ -772,7 +772,9 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "bitcode",
+ "crc32fast",
  "database",
+ "dirs 6.0.0",
  "log",
  "serde",
  "tauri",

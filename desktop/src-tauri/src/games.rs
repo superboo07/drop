@@ -419,3 +419,12 @@ pub fn update_game_configuration(
 
     Ok(())
 }
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn add_to_steam(
+    game_id: String,
+    app_name: String,
+) -> Result<(), ::client::steam_shortcut::SteamShortcutError> {
+    ::client::steam_shortcut::add_game_to_steam(&game_id, &app_name)
+}

@@ -64,6 +64,7 @@
             @kill="() => kill()"
             @options="() => (configureModalOpen = true)"
             @resume="() => resumeDownload()"
+            @add-to-steam="() => addToSteam()"
             :status="status"
           />
           <button
@@ -853,6 +854,32 @@ async function kill() {
       {
         title: `Couldn't stop "${game.mName}"`,
         description: `Drop failed to stop "${game.mName}": ${e}`,
+        buttonText: "Close",
+      },
+      (e, c) => c(),
+    );
+    console.error(e);
+  }
+}
+
+async function addToSteam() {
+  try {
+    await invoke("add_to_steam", { gameId: game.id, appName: game.mName });
+    createModal(
+      ModalType.Notification,
+      {
+        title: "Added to Steam",
+        description: `"${game.mName}" was added as a non-Steam game. Restart Steam if it doesn't show up in your library.`,
+        buttonText: "Close",
+      },
+      (e, c) => c(),
+    );
+  } catch (e) {
+    createModal(
+      ModalType.Notification,
+      {
+        title: `Couldn't add "${game.mName}" to Steam`,
+        description: `${e}`,
         buttonText: "Close",
       },
       (e, c) => c(),

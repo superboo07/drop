@@ -1,0 +1,52 @@
+# AppImage builder for Drop Desktop Client
+#
+# Not meant to be run directly — build_appimage.sh handles everything:
+#   bash build_appimage.sh
+#
+# The script builds this image, then mounts the repo into a container and
+# runs `pnpm tauri build` inside it. Output lands in the repo root as
+# Drop.Desktop.Client_<version>_amd64.AppImage (or similar, per tauri-bundler).
+#
+# Base is Ubuntu 23.10 (mantic), not the more usual 22.04/24.04, specifically
+# for its webkit2gtk-4.1 version: every WebKitGTK past 2.44 hits an unresolved
+# upstream EGL/Wayland regression ("Could not create default EGL display:
+# EGL_BAD_PARAMETER") that aborts the WebProcess on launch. 23.10 shipped
+# 2.44.2 — new enough for the webkit2gtk API symbols wry/tauri need, old
+# enough to predate the regression. Mantic is EOL, hence old-releases.ubuntu.com.
+FROM ubuntu:23.10
+
+RUN sed -i \
+        -e 's|http://archive.ubuntu.com/ubuntu|http://old-releases.ubuntu.com/ubuntu|g' \
+        -e 's|http://security.ubuntu.com/ubuntu|http://old-releases.ubuntu.com/ubuntu|g' \
+        /etc/apt/sources.list
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    APPIMAGE_EXTRACT_AND_RUN=1 \
+    CARGO_HOME=/root/.cargo \
+    RUSTUP_HOME=/root/.rustup \
+    PATH=/root/.cargo/bin:$PATH
+
+# System deps: Tauri's Linux bundler deps (webkitgtk/appindicator/rsvg/patchelf)
+# plus Go, make and clang/libclang (needed to build the vendored tailscale
+# cgo bindings via bindgen in src-tauri/tailscale).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates git build-essential make pkg-config \
+        clang llvm-dev libclang-dev golang-go \
+        libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+        libappindicator3-dev librsvg2-dev \
+        libssl-dev libsoup-3.0-dev \
+        patchelf xdg-utils file \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust, pinned to nightly per rust-toolchain.toml
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+        sh -s -- -y --default-toolchain nightly --profile minimal
+
+# Node + pnpm — installed from upstream tarball rather than nodesource, since
+# nodesource's setup script doesn't recognize EOL codenames like mantic.
+RUN curl -fsSL https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz \
+        | tar -xJ -C /usr/local --strip-components=1 -f - \
+    && corepack enable \
+    && corepack prepare pnpm@10 --activate
+
+WORKDIR /workspace

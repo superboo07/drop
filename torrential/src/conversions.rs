@@ -33,5 +33,10 @@ pub fn convert_protobuf_manifest(source: Manifest) -> droplet_rs::manifest::Mani
             .collect(),
         size: source.size,
         key: fixed_length(source.key),
+        // This manifest arrives over torrential's internal protobuf protocol
+        // (depot chunk-serving), which doesn't carry per-file hashes - those
+        // are only threaded through the JSON-stored dropletManifest blob
+        // consumed by the client-facing manifest API (server/internal/library/manifest).
+        file_hashes: std::collections::HashMap::new(),
     }
 }

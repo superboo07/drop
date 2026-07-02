@@ -23,4 +23,10 @@ pub struct Manifest {
     pub chunks: HashMap<String, ChunkData>,
     pub size: u64,
     pub key: [u8; 16],
+    /// Whole-file SHA-256 (hex) per relative filename, independent of chunk
+    /// boundaries (a file's bytes can span multiple chunks, and a chunk can
+    /// hold pieces of multiple files). Used by clients to verify installed
+    /// files against the server's known-good content.
+    #[serde(default, rename = "fileHashes")]
+    pub file_hashes: HashMap<String, String>,
 }

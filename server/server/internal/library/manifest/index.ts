@@ -11,6 +11,12 @@ export type DownloadManifestDetails = {
    * File name to version ID
    */
   fileList: { [key: string]: string };
+  /***
+   * File name to whole-file SHA-256 (hex), for files whose owning version
+   * has one recorded. Missing entries mean no server-side hash is available
+   * for that file (e.g. it predates hashing support).
+   */
+  fileHashes: { [key: string]: string };
   /// Size on disk after download
   installSize: number;
   /// Size of download
@@ -102,6 +108,7 @@ export async function createDownloadManifestDetails(
 
   // Now that we have our file list, filter the manifests
   const manifests = new Map<string, DropletManifest>();
+  const fileHashes = new Map<string, string>();
   for (const version of versionOrder) {
     const files = fileList
       .entries()
@@ -110,6 +117,10 @@ export async function createDownloadManifestDetails(
     if (files.length == 0) continue;
     const fileNames = Object.fromEntries(files);
     const manifest = castManifest(version.dropletManifest);
+    for (const filename of Object.keys(fileNames)) {
+      const hash = manifest.fileHashes?.[filename];
+      if (hash) fileHashes.set(filename, hash);
+    }
     const filteredChunks = Object.fromEntries(
       Object.entries(manifest.chunks).filter(([_, chunkData]) => {
         //if(existingChunks && existingChunks.manifests[version.versionId]?.chunks?.[chunkId]) return false;
@@ -142,6 +153,7 @@ export async function createDownloadManifestDetails(
 
   const result = {
     fileList: convertMap(fileList),
+    fileHashes: convertMap(fileHashes),
     manifests: convertMap(manifests),
     installSize,
     downloadSize,

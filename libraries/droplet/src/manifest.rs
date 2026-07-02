@@ -45,6 +45,13 @@ where
     let mut files = backend.list_files().await?;
     files.sort_by_key(|b| std::cmp::Reverse(b.size));
 
+    // Chunk boundaries don't align with file boundaries (a file can be split
+    // across chunks, and a chunk can hold pieces of multiple files), and
+    // chunks are hashed concurrently, so a per-file hash can't be derived
+    // from the chunk hashing below. Hash whole files independently instead,
+    // before `files` is consumed by `organise_files`.
+    let files_for_hashing = files.clone();
+
     log_sfn("organising files into chunks...".to_string());
 
     let chunks = organise_files(files, backend.require_whole_files());
@@ -63,6 +70,9 @@ where
     )
     .await?;
 
+    log_sfn("hashing whole files for content verification...".to_string());
+    let file_hashes = hash_whole_files(backend.as_ref(), files_for_hashing, semaphore).await?;
+
     let mut key = [0u8; 16];
     getrandom::fill(&mut key).map_err(|err| anyhow!("failed to generate key: {:?}", err))?;
 
@@ -76,7 +86,50 @@ where
         chunks: manifest,
         size: total_manifest_length,
         key,
+        file_hashes,
     })
+}
+
+// Computes a whole-file SHA-256 (hex) per relative filename. Deliberately a
+// second, independent read pass over each file (doubling per-file I/O at
+// ingest time) rather than trying to reuse the per-chunk hashing above -
+// that's a one-time admin-side cost, not something end users feel.
+async fn hash_whole_files(
+    backend: &(dyn VersionBackend + Send + Sync),
+    files: Vec<VersionFile>,
+    semaphore: Option<&Semaphore>,
+) -> anyhow::Result<HashMap<String, String>> {
+    let futures = files.into_iter().map(|file| async move {
+        let permit = if let Some(semaphore) = &semaphore {
+            Some(semaphore.acquire().await?)
+        } else {
+            None
+        };
+
+        let mut reader = backend.reader(&file, 0, file.size).await?;
+        let mut hasher = Sha256::new();
+        let mut read_buf = vec![0u8; 1024 * 1024];
+        loop {
+            let amount = reader.read(&mut read_buf).await?;
+            if amount == 0 {
+                break;
+            }
+            hasher.update(&read_buf[..amount]);
+        }
+        drop(permit);
+
+        let hash: String = hasher.finalize().encode_hex();
+        Ok::<_, anyhow::Error>((file.relative_filename, hash))
+    });
+
+    let mut stream = futures::stream::iter(futures)
+        .buffer_unordered(semaphore.map(|s| s.available_permits()).unwrap_or(4));
+    let mut results = HashMap::new();
+    while let Some(res) = stream.next().await {
+        let (filename, hash) = res?;
+        results.insert(filename, hash);
+    }
+    Ok(results)
 }
 
 fn organise_files(

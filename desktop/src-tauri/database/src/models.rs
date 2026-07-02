@@ -81,6 +81,10 @@ pub mod data {
                 override_proton_path: None,
                 override_handler: None,
                 enable_updates: false,
+                disable_dxvk: false,
+                disable_esync: false,
+                disable_fsync: false,
+                extra_env_vars: String::new(),
             }
         }
 
@@ -92,6 +96,14 @@ pub mod data {
             #[serde(default)]
             pub override_handler: Option<String>,
             pub enable_updates: bool,
+            #[serde(default)]
+            pub disable_dxvk: bool,
+            #[serde(default)]
+            pub disable_esync: bool,
+            #[serde(default)]
+            pub disable_fsync: bool,
+            #[serde(default)]
+            pub extra_env_vars: String,
         }
 
         impl Default for UserConfiguration {

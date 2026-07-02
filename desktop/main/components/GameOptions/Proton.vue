@@ -1,6 +1,62 @@
 <template>
   <div class="space-y-8">
     <div>
+      <h3 class="text-sm font-medium leading-6 text-zinc-100">
+        Compatibility
+      </h3>
+      <p class="mt-1 text-sm leading-6 text-zinc-400">
+        Toggle common Proton compatibility workarounds for this game
+      </p>
+
+      <div class="mt-3 space-y-3">
+        <div
+          v-for="toggle in compatToggles"
+          :key="toggle.key"
+          class="flex flex-row items-center justify-between"
+        >
+          <div>
+            <h4 class="text-sm font-medium leading-6 text-zinc-100">
+              {{ toggle.label }}
+            </h4>
+            <p class="mt-1 text-sm leading-6 text-zinc-400">
+              {{ toggle.description }}
+            </p>
+          </div>
+          <Switch
+            v-model="model[toggle.key]"
+            :class="[
+              model[toggle.key] ? 'bg-blue-600' : 'bg-zinc-700',
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out',
+            ]"
+          >
+            <span
+              :class="[
+                model[toggle.key] ? 'translate-x-5' : 'translate-x-0',
+                'pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              ]"
+            />
+          </Switch>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="text-sm font-medium leading-6 text-zinc-100">
+        Extra environment variables
+      </h3>
+      <p class="mt-1 text-sm leading-6 text-zinc-400">
+        One <code>KEY=value</code> pair per line, passed to Proton/Wine when
+        launching this game
+      </p>
+      <textarea
+        v-model="model.extraEnvVars"
+        rows="3"
+        placeholder="DXVK_HUD=fps&#10;WINEDLLOVERRIDES=dxgi=n"
+        class="mt-3 block w-full rounded-md bg-white/5 p-3 font-mono text-sm text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-blue-500"
+      />
+    </div>
+
+    <div>
       <h3 class="text-sm font-medium leading-6 text-zinc-100">Winetricks</h3>
       <p class="mt-1 text-sm leading-6 text-zinc-400">
         Install a component (DirectX, .NET, fonts, etc.) into this game's
@@ -78,11 +134,37 @@
 
 <script setup lang="ts">
 import { Cog6ToothIcon, MagnifyingGlassIcon } from "@heroicons/vue/24/outline";
+import { Switch } from "@headlessui/vue";
 import { invoke } from "@tauri-apps/api/core";
+import type { GameVersion } from "~/types";
 
 const props = defineProps<{
   gameId: string;
 }>();
+
+const model = defineModel<GameVersion["userConfiguration"]>({ required: true });
+
+const compatToggles: Array<{
+  key: "disableDxvk" | "disableEsync" | "disableFsync";
+  label: string;
+  description: string;
+}> = [
+  {
+    key: "disableDxvk",
+    label: "Disable DXVK",
+    description: "Use Wine's built-in WineD3D instead of DXVK for Direct3D",
+  },
+  {
+    key: "disableEsync",
+    label: "Disable Esync",
+    description: "Turn off Wine's eventfd-based sync primitives",
+  },
+  {
+    key: "disableFsync",
+    label: "Disable Fsync",
+    description: "Turn off Wine's futex-based sync primitives",
+  },
+];
 
 type WinetricksVerb = {
   category: string;

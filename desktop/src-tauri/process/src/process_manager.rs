@@ -558,6 +558,17 @@ impl ProcessManager<'_> {
             .stderr(error_file)
             .stdout(log_file)
             .env_remove("RUST_LOG")
+            // On Linux, the AppImage's AppRun sets PYTHONHOME/PYTHONPATH to
+            // point into our own (Python-less) bundle, meant for apps that
+            // ship their own Python. Games/launchers that are themselves
+            // Python (e.g. umu-run) inherit that and fail with "Fatal Python
+            // error: Failed to import encodings module" since they can't
+            // find their real stdlib. LD_LIBRARY_PATH (set for our bundled
+            // webkit2gtk/GTK libs) is similarly unrelated to anything a game
+            // or its launcher needs and can only cause conflicts.
+            .env_remove("PYTHONHOME")
+            .env_remove("PYTHONPATH")
+            .env_remove("LD_LIBRARY_PATH")
             .current_dir(launch_parameters.1);
 
         process_handler.modify_command(&mut command);

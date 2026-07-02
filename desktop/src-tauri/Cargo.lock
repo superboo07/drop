@@ -4608,6 +4608,7 @@ dependencies = [
  "dynfmt",
  "games",
  "keyvalues-parser",
+ "libc",
  "log",
  "page_size",
  "serde",

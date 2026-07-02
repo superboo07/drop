@@ -126,6 +126,28 @@ impl ProcessManager<'_> {
         match self.processes.get_mut(&game_id) {
             Some(process) => {
                 process.manually_killed = true;
+
+                // Games are launched through wrapper processes (umu-run -> proton ->
+                // wine[server] -> the actual game), so killing only the directly
+                // tracked PID leaves the real game process running as an orphan.
+                // The whole tree shares a process group (set at spawn time via
+                // process_group(0)), so signal the group instead of just the leader.
+                #[cfg(unix)]
+                {
+                    let pgid = process.handle.id() as i32;
+                    // Safety: signalling our own child's process group with SIGKILL.
+                    if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
+                        let err = io::Error::last_os_error();
+                        // ESRCH just means the group's already gone (e.g. the game
+                        // exited on its own between the status check and this call).
+                        if err.raw_os_error() != Some(libc::ESRCH) {
+                            warn!(
+                                "failed to kill process group {pgid} for {game_id}: {err}"
+                            );
+                        }
+                    }
+                }
+
                 kill_process_tree(&process.handle)?;
                 let exit_status = process.handle.wait()?;
                 info!("exit status: {:?}", exit_status);
@@ -563,6 +585,15 @@ impl ProcessManager<'_> {
         sanitize_external_command(&mut command);
 
         process_handler.modify_command(&mut command);
+
+        // Put the launched process in its own process group so kill_game can signal
+        // the whole tree (umu-run -> proton -> wine[server] -> the game) at once,
+        // rather than just the directly spawned wrapper process.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
 
         let child = command.spawn()?;
 

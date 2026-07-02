@@ -453,33 +453,34 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                run_on_tray(|| {
-                    // Pause webview rendering before hiding to prevent idle CPU usage
-                    #[cfg(target_os = "linux")]
-                    {
-                        let _ = window.app_handle().emit("window_visibility_change", ());
-                    }
+                let quit_on_close = borrow_db_checked().settings.quit_on_close;
+                if !quit_on_close {
+                    run_on_tray(|| {
+                        // Pause webview rendering before hiding to prevent idle CPU usage
+                        #[cfg(target_os = "linux")]
+                        {
+                            let _ = window.app_handle().emit("window_visibility_change", ());
+                        }
 
-                    window.hide().expect("Failed to hide window in tray");
-                    api.prevent_close();
-                });
+                        window.hide().expect("Failed to hide window in tray");
+                        api.prevent_close();
+                    });
+                }
             }
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
     app.run(|_app_handle, event| {
-        if let RunEvent::ExitRequested {
-            code,
-            api,
-            ..
-        } = event
-        {
-            run_on_tray(|| {
-                if code.is_none() {
-                    api.prevent_exit();
-                }
-            });
+        if let RunEvent::ExitRequested { code, api, .. } = event {
+            let quit_on_close = borrow_db_checked().settings.quit_on_close;
+            if !quit_on_close {
+                run_on_tray(|| {
+                    if code.is_none() {
+                        api.prevent_exit();
+                    }
+                });
+            }
         }
     });
 }

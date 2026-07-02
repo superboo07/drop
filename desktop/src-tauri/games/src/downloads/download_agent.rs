@@ -21,7 +21,7 @@ use remote::error::RemoteAccessError;
 use remote::requests::generate_url;
 use remote::utils::DROP_CLIENT_ASYNC;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::fs::{create_dir_all, remove_file};
 use std::io;
@@ -37,7 +37,7 @@ use crate::library::{Game, on_game_complete, push_game_update, set_partially_ins
 use crate::state::GameStatusManager;
 
 use super::download_logic::download_game_chunk;
-use super::drop_data::DropData;
+use super::drop_data::{DropData, InstalledFileRecord, hash_file};
 
 static RETRY_COUNT: usize = 3;
 
@@ -45,6 +45,11 @@ static RETRY_COUNT: usize = 3;
 #[serde(rename_all = "camelCase")]
 pub struct DownloadInformation {
     file_list: HashMap<String, String>,
+    // Relative path -> server-known whole-file SHA-256 (hex), for files whose
+    // owning version has one recorded. Missing entries (or an old server that
+    // doesn't send this field at all) mean no server hash is available.
+    #[serde(default)]
+    file_hashes: HashMap<String, String>,
     manifests: HashMap<String, Manifest>,
     install_size: u64,
     download_size: u64,
@@ -288,10 +293,29 @@ impl GameDownloadAgent {
                 .map(|v| (v.0.clone(), v.1.chunks.clone(), v.1.key))
                 .collect()
         };
-        let file_list = {
+        let (file_list, file_hashes) = {
             let dl_info = lock!(self.dl_info);
-            dl_info.as_ref().unwrap().file_list.clone()
+            let dl_info = dl_info.as_ref().unwrap();
+            (dl_info.file_list.clone(), dl_info.file_hashes.clone())
         };
+        // Record which files belong to this install/update as soon as we know
+        // them, so uninstall can later remove exactly these files (verifying
+        // their content against server_hash below) instead of wiping the
+        // whole install directory.
+        self.dropdata.set_installed_files(
+            file_list
+                .keys()
+                .map(|path| {
+                    (
+                        path.clone(),
+                        InstalledFileRecord {
+                            server_hash: file_hashes.get(path).cloned(),
+                            client_hash: None,
+                        },
+                    )
+                })
+                .collect(),
+        );
         let mut completed_chunks = {
             let completed_chunks = lock!(self.dropdata.contexts);
             completed_chunks.clone()
@@ -444,7 +468,82 @@ impl GameDownloadAgent {
             );
             return Ok(false);
         }
+
+        // Every chunk reported complete - verify the fully assembled files
+        // actually match what the server expects. Per-chunk checksums above
+        // only ever verify bytes in flight; they can't catch a bug in the
+        // offset/seek logic that assembles chunks into files, or corruption
+        // that happens after a chunk's bytes are already written to disk.
+        // This also records a client-computed hash as a fallback baseline for
+        // uninstall verification when no server hash is known for a file.
+        self.verify_installed_files(base_path)?;
+
         Ok(true)
+    }
+
+    // See the call site in `run()` above for why this exists. Failing like a
+    // chunk-checksum error (rather than a soft `Ok(false)`) reuses the app's
+    // existing corrupt-download UX, and clearing just the affected chunks'
+    // completion state means a retry only re-fetches what's actually broken.
+    fn verify_installed_files(&self, base_path: &Path) -> Result<(), ApplicationDownloadError> {
+        let installed_files = self.dropdata.get_installed_files();
+        let mut corrupted_chunk_ids: HashSet<String> = HashSet::new();
+
+        for (relative_path, record) in installed_files.iter() {
+            let file_path = base_path.join(relative_path);
+            let hash = match hash_file(&file_path) {
+                Ok(hash) => hash,
+                Err(e) => {
+                    warn!(
+                        "could not hash installed file {}: {e}",
+                        file_path.display()
+                    );
+                    continue;
+                }
+            };
+
+            if let Some(server_hash) = &record.server_hash
+                && server_hash != &hash
+            {
+                warn!(
+                    "installed file {} doesn't match the server's hash (expected {server_hash}, got {hash}) - treating as a corrupted download",
+                    file_path.display()
+                );
+                let _ = remove_file(&file_path);
+
+                let dl_info = lock!(self.dl_info);
+                if let Some(dl_info) = dl_info.as_ref() {
+                    for manifest in dl_info.manifests.values() {
+                        for (chunk_id, chunk_data) in manifest.chunks.iter() {
+                            if chunk_data
+                                .files
+                                .iter()
+                                .any(|f| &f.filename == relative_path)
+                            {
+                                corrupted_chunk_ids.insert(chunk_id.clone());
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            self.dropdata
+                .set_installed_file_client_hash(relative_path, hash);
+        }
+
+        if !corrupted_chunk_ids.is_empty() {
+            let mut contexts = lock!(self.dropdata.contexts);
+            for chunk_id in &corrupted_chunk_ids {
+                contexts.insert(chunk_id.clone(), false);
+            }
+            drop(contexts);
+            self.dropdata.write();
+            return Err(ApplicationDownloadError::Checksum);
+        }
+
+        self.dropdata.write();
+        Ok(())
     }
 
     #[allow(dead_code)]

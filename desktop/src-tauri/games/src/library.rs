@@ -5,16 +5,20 @@ use database::{
     models::data::{InstalledGameType, UserConfiguration},
 };
 use log::{debug, error, warn};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use remote::{
     auth::generate_authorization_header, error::RemoteAccessError, requests::generate_url,
     utils::DROP_CLIENT_ASYNC,
 };
 use serde::{Deserialize, Serialize};
-use std::fs::remove_dir_all;
+use std::fs;
+use std::fs::{read_dir, remove_dir, remove_dir_all, remove_file};
+use std::path::Path;
 use std::thread::spawn;
 use tauri::AppHandle;
 use utils::app_emit;
 
+use crate::downloads::drop_data::{DROPDATA_PATH, DropData, InstalledFileRecord, hash_file};
 use crate::state::{GameStatusManager, GameStatusWithTransient};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -138,13 +142,25 @@ pub fn uninstall_game_logic(meta: DownloadableMetadata, app_handle: &AppHandle) 
         return;
     };
 
-    if let Some((_, install_dir)) = match previous_state {
+    if let Some((_, install_dir, verify)) = match previous_state {
         GameDownloadStatus::Installed {
-            install_type: _,
+            install_type,
             version_id: version_name,
             install_dir,
             update_available: _,
-        } => Some((version_name, install_dir)),
+        } => {
+            // Only a completed install has trustworthy hashes to verify
+            // against - a cancelled/partial install's server_hash was
+            // recorded for the *target* file list before any bytes were
+            // necessarily written, so an incomplete file would look
+            // "modified" and get wrongly preserved. For those, delete
+            // unconditionally, same as before this verification existed.
+            let verify = matches!(
+                install_type,
+                InstalledGameType::Installed | InstalledGameType::SetupRequired
+            );
+            Some((version_name, install_dir, verify))
+        }
         _ => None,
     } {
         db_handle
@@ -156,9 +172,7 @@ pub fn uninstall_game_logic(meta: DownloadableMetadata, app_handle: &AppHandle) 
 
         let app_handle = app_handle.clone();
         spawn(move || {
-            if let Err(e) = remove_dir_all(install_dir) {
-                error!("{e}");
-            }
+            uninstall_files(&install_dir, verify);
             let mut db_handle = borrow_db_mut_checked();
             db_handle.applications.transient_statuses.remove(&meta);
             db_handle
@@ -183,6 +197,118 @@ pub fn uninstall_game_logic(meta: DownloadableMetadata, app_handle: &AppHandle) 
         });
     } else {
         warn!("invalid previous state for uninstall, failing silently.");
+    }
+}
+
+// Removes only what Drop actually put in `install_dir`, leaving anything the
+// user placed there themselves (mods, extra saves, unrelated files) alone -
+// and, when `verify` is true, also leaving behind any tracked file whose
+// content no longer matches what was installed (e.g. a game that wrote save
+// data or self-patched a file into its own install folder).
+//
+// We know exactly which files were installed from `.dropdata`'s
+// `installed_files` (populated during download/update, see `drop_data.rs`).
+// If that manifest can't be read or is empty - e.g. a game installed before
+// this tracking existed, or one imported by pointing Drop at an existing
+// folder - we have no way to tell "ours" from "not ours" apart, so we fall
+// back to the old behavior of removing the whole directory rather than
+// silently leaving orphaned game files behind.
+fn uninstall_files(install_dir: &str, verify: bool) {
+    let install_dir = Path::new(install_dir);
+
+    let installed_files = match DropData::read(install_dir) {
+        Ok(drop_data) => drop_data.get_installed_files(),
+        Err(e) => {
+            debug!("no readable .dropdata in {}: {e}", install_dir.display());
+            Default::default()
+        }
+    };
+
+    if installed_files.is_empty() {
+        warn!(
+            "no install manifest for {}, removing entire directory",
+            install_dir.display()
+        );
+        if let Err(e) = remove_dir_all(install_dir) {
+            error!("{e}");
+        }
+        return;
+    }
+
+    let decisions: Vec<(String, bool)> = installed_files
+        .into_par_iter()
+        .map(|(relative_path, record)| {
+            let keep = verify && should_keep(install_dir, &relative_path, &record);
+            (relative_path, keep)
+        })
+        .collect();
+
+    for (relative_path, keep) in decisions {
+        let file_path = install_dir.join(&relative_path);
+        if keep {
+            warn!(
+                "{} was modified after install, keeping it",
+                file_path.display()
+            );
+            continue;
+        }
+        if let Err(e) = remove_file(&file_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            warn!(
+                "failed to remove installed file {}: {e}",
+                file_path.display()
+            );
+        }
+    }
+    let _ = remove_file(install_dir.join(DROPDATA_PATH));
+
+    remove_empty_dirs(install_dir);
+    // Only actually disappears if it's now empty, i.e. nothing foreign (or
+    // preserved-as-modified) was left behind. Fails silently otherwise.
+    let _ = remove_dir(install_dir);
+}
+
+// Whether a tracked file has changed since install and should be preserved
+// rather than deleted. Never dereferences symlinks to hash them - a
+// game-controlled (or malicious) symlink could point at an arbitrary or
+// unbounded target outside the install dir - so symlinks are always safe to
+// delete, matching pre-verification behavior for them.
+fn should_keep(install_dir: &Path, relative_path: &str, record: &InstalledFileRecord) -> bool {
+    let file_path = install_dir.join(relative_path);
+
+    let Ok(metadata) = fs::symlink_metadata(&file_path) else {
+        return false; // already gone, nothing to keep
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+
+    let Ok(current_hash) = hash_file(&file_path) else {
+        return false;
+    };
+
+    match record.server_hash.as_deref().or(record.client_hash.as_deref()) {
+        Some(known_good) => current_hash != known_good,
+        // No baseline recorded at all (e.g. installed before hash tracking
+        // existed) - preserve the old, unverified delete behavior.
+        None => false,
+    }
+}
+
+// Recursively removes directories left empty after `uninstall_files` deletes
+// tracked files, without touching directories that still hold other content.
+fn remove_empty_dirs(dir: &Path) {
+    let Ok(entries) = read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            remove_empty_dirs(&path);
+            let _ = remove_dir(&path);
+        }
     }
 }
 

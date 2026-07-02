@@ -89,6 +89,8 @@ import { ArrowPathIcon } from "@heroicons/vue/24/solid";
 import type { GameVersion } from "~/types";
 
 const appState = useAppState();
+const protonLogoSrc =
+  useRuntimeConfig().app.baseURL.replace(/\/$/, "") + "/proton-logo.png";
 
 const open = defineModel<boolean>();
 const props = defineProps<{ gameId: string }>();
@@ -125,7 +127,7 @@ const tabs: Array<{ name: string; icon: Component; page: Component }> = [
     ? [
         {
           name: "Proton",
-          icon: h("img", { src: "/proton-logo.png" }),
+          icon: h("img", { src: protonLogoSrc }),
           page: Proton,
         },
       ]

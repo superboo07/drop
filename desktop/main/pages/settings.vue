@@ -65,6 +65,8 @@ const isDebugMode = ref(systemData.logLevel.toLowerCase() === "debug");
 const debugRevealed = ref(false);
 
 const appState = useAppState();
+const protonLogoSrc =
+  useRuntimeConfig().app.baseURL.replace(/\/$/, "") + "/proton-logo.png";
 
 // Track shift key state and debug reveal
 onMounted(() => {
@@ -118,7 +120,7 @@ const navigation = computed(() => [
           label: "Proton",
           route: "/settings/compat",
           prefix: "/settings/compat",
-          icon: h("img", { src: "/proton-logo.png" }),
+          icon: h("img", { src: protonLogoSrc }),
         },
       ]
     : []),

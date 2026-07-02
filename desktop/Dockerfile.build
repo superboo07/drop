@@ -49,4 +49,28 @@ RUN curl -fsSL https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz \
     && corepack enable \
     && corepack prepare pnpm@10 --activate
 
+# Vendored umu-run + winetricks, injected into the AppImage by
+# build_appimage.sh (see the post-processing step there). This is what
+# makes Proton/winetricks features in the app work on systems like the
+# Steam Deck, where there's no distro package manager to install
+# umu-launcher/winetricks system-wide. umu-run is a self-contained Python
+# zipapp (needs only a system python3 to run); winetricks is a plain shell
+# script. Neither is a static binary — both still shell out to whatever
+# Proton/Wine build the game itself is configured to use.
+RUN mkdir -p /opt/drop-vendor \
+    && curl -fsSL -o /tmp/umu.tar \
+        https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.0/umu-launcher-1.4.0-zipapp.tar \
+    && tar -xf /tmp/umu.tar -C /tmp \
+    && cp /tmp/umu/umu-run /opt/drop-vendor/umu-run \
+    && rm -rf /tmp/umu.tar /tmp/umu \
+    && curl -fsSL -o /opt/drop-vendor/winetricks \
+        https://raw.githubusercontent.com/Winetricks/winetricks/20260125/src/winetricks \
+    && chmod +x /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks
+
+# appimagetool, used by build_appimage.sh to repack the AppImage after
+# injecting the vendored tools above.
+RUN curl -fsSL -o /usr/local/bin/appimagetool \
+        https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+    && chmod +x /usr/local/bin/appimagetool
+
 WORKDIR /workspace

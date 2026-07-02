@@ -44,6 +44,20 @@ fn get_umu_executable() -> Option<PathBuf> {
             return Some(p);
         }
     }
+
+    // Fall back to the umu-run we vendor inside the AppImage, for systems
+    // with no distro package manager to install umu-launcher on (e.g. the
+    // Steam Deck). It's a self-contained Python zipapp, so this still
+    // needs a system python3 to run it.
+    if let Ok(appdir) = std::env::var("APPDIR") {
+        let p = PathBuf::from(appdir)
+            .join("usr/libexec/drop-tools")
+            .join(UMU_BASE_LAUNCHER_EXECUTABLE);
+        if check_executable_exists(&p) {
+            return Some(p);
+        }
+    }
+
     None
 }
 fn check_executable_exists<P: AsRef<OsStr>>(exec: P) -> bool {

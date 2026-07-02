@@ -49,8 +49,26 @@ pnpm install
 echo ">>> Running tauri build (appimage only)..."
 pnpm tauri build --bundles appimage
 
-# ── 4. Copy the result out to the repo root ───────────────────────────────────
+# ── 4. Inject vendored umu-run/winetricks (Steam Deck etc. support) ───────────
+# These have no distro package manager to install umu-launcher/winetricks on,
+# so we bundle known-working copies as a fallback. Placed in their own
+# directory (not usr/bin) so they don't get caught up in the sanitize step
+# that strips the AppImage's usr/bin from PATH before spawning external
+# tools (see utils::external_open::sanitize_external_command) -- that step
+# re-adds this specific directory back.
 APPIMAGE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage)
+echo ">>> Injecting vendored umu-run/winetricks..."
+rm -rf squashfs-root
+"$APPIMAGE" --appimage-extract >/dev/null
+mkdir -p squashfs-root/usr/libexec/drop-tools
+cp /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks squashfs-root/usr/libexec/drop-tools/
+
+echo ">>> Repacking AppImage..."
+rm -f "$APPIMAGE"
+ARCH=x86_64 appimagetool squashfs-root "$APPIMAGE"
+rm -rf squashfs-root
+
+# ── 5. Copy the result out to the repo root ───────────────────────────────────
 cp "$APPIMAGE" ./
 
 echo ""

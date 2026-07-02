@@ -40,15 +40,35 @@ pub fn sanitize_external_command(command: &mut Command) {
     // xdg-open ended up running instead of the system's). Strip just the
     // bundle's own segments rather than the whole variable.
     if let Ok(appdir) = std::env::var("APPDIR") {
-        for var in ["PATH", "XDG_DATA_DIRS"] {
-            if let Ok(value) = std::env::var(var) {
-                let cleaned = value
-                    .split(':')
-                    .filter(|segment| !segment.starts_with(appdir.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(":");
-                command.env(var, cleaned);
+        if let Ok(value) = std::env::var("XDG_DATA_DIRS") {
+            let cleaned = value
+                .split(':')
+                .filter(|segment| !segment.starts_with(appdir.as_str()))
+                .collect::<Vec<_>>()
+                .join(":");
+            command.env("XDG_DATA_DIRS", cleaned);
+        }
+
+        if let Ok(value) = std::env::var("PATH") {
+            let mut cleaned = value
+                .split(':')
+                .filter(|segment| !segment.starts_with(appdir.as_str()))
+                .collect::<Vec<_>>()
+                .join(":");
+
+            // Unlike usr/bin (which holds problematic bundled tools like
+            // the outdated xdg-open), usr/libexec/drop-tools holds
+            // umu-run/winetricks we deliberately vendor for systems with
+            // no distro package manager to install them on (e.g. the
+            // Steam Deck). Add it back so both a direct
+            // `Command::new("winetricks")` and umu-run's own internal
+            // PATH-based lookup of "winetricks" can find them.
+            let vendor_dir = std::path::Path::new(&appdir).join("usr/libexec/drop-tools");
+            if vendor_dir.is_dir() {
+                cleaned = format!("{}:{cleaned}", vendor_dir.to_string_lossy());
             }
+
+            command.env("PATH", cleaned);
         }
     }
 }

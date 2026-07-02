@@ -26,6 +26,8 @@ git submodule update --init --recursive
 
 Rust toolchain is pinned to **nightly** (`src-tauri/rust-toolchain.toml`) — several crates rely on unstable features (`nonpoison_mutex`, `iterator_try_collect`, etc).
 
+**Builds (not lint/typecheck) must run inside a Dockerfile, not on the host.** Use `bash build_appimage.sh` (`Dockerfile.build`) for actual build artifacts rather than installing/running the Rust or Node toolchains directly on the host. This applies to Drop's other repo (the server) too. Lightweight verification of an edit — `cargo check`, `cargo clippy`, `pnpm -C main typecheck` — is fine to run on the host if the toolchain is already there.
+
 ### AppImage builds (Linux)
 
 `bash build_appimage.sh` builds a Docker image from `Dockerfile.build` and runs the whole build inside a container (no host Rust/Node install needed). See "AppImage gotchas" below before touching anything that spawns subprocesses or affects the Linux bundle target.

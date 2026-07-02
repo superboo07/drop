@@ -6,7 +6,7 @@ use std::{
     process::{Command, ExitStatus},
     sync::Arc,
     thread::spawn,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use database::{
@@ -128,22 +128,48 @@ impl ProcessManager<'_> {
                 process.manually_killed = true;
 
                 // Games are launched through wrapper processes (umu-run -> proton ->
-                // wine[server] -> the actual game), so killing only the directly
-                // tracked PID leaves the real game process running as an orphan.
-                // The whole tree shares a process group (set at spawn time via
-                // process_group(0)), so signal the group instead of just the leader.
+                // wine[server] -> the actual game). umu-run calls setsid() on Proton
+                // internally, which moves the real game tree into a *new* session and
+                // process group, distinct from the one we set at spawn time - so
+                // signalling that group only ever reaches umu-run itself, never the
+                // actual game. Find every real descendant via /proc and signal them
+                // directly. We use SIGTERM first (not SIGKILL): umu-run installs its
+                // own SIGTERM handler that walks and forwards to its process tree,
+                // which is a second safety net on top of our own walk, but only if we
+                // don't kill it outright before it gets to run.
                 #[cfg(unix)]
                 {
-                    let pgid = process.handle.id() as i32;
-                    // Safety: signalling our own child's process group with SIGKILL.
-                    if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
-                        let err = io::Error::last_os_error();
-                        // ESRCH just means the group's already gone (e.g. the game
-                        // exited on its own between the status check and this call).
-                        if err.raw_os_error() != Some(libc::ESRCH) {
-                            warn!(
-                                "failed to kill process group {pgid} for {game_id}: {err}"
-                            );
+                    let root_pid = process.handle.id() as i32;
+
+                    #[cfg(target_os = "linux")]
+                    let descendants = collect_descendant_pids(root_pid);
+                    #[cfg(not(target_os = "linux"))]
+                    let descendants: Vec<i32> = Vec::new();
+
+                    let mut targets = descendants;
+                    targets.push(root_pid);
+
+                    send_signal_to_all(&targets, libc::SIGTERM);
+                    // Best-effort: also signal the group set at spawn time, in case
+                    // the tree stayed together (e.g. non-umu launch paths).
+                    unsafe {
+                        libc::kill(-root_pid, libc::SIGTERM);
+                    }
+
+                    let deadline = Instant::now() + Duration::from_secs(3);
+                    while Instant::now() < deadline && targets.iter().any(|&pid| pid_alive(pid)) {
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+
+                    let remaining: Vec<i32> =
+                        targets.into_iter().filter(|&pid| pid_alive(pid)).collect();
+                    if !remaining.is_empty() {
+                        warn!(
+                            "processes {remaining:?} for {game_id} didn't exit after SIGTERM, sending SIGKILL"
+                        );
+                        send_signal_to_all(&remaining, libc::SIGKILL);
+                        unsafe {
+                            libc::kill(-root_pid, libc::SIGKILL);
                         }
                     }
                 }
@@ -655,6 +681,81 @@ fn kill_process_tree(handle: &SharedChild) -> io::Result<()> {
         }
     }
     handle.kill()
+}
+
+// Walk /proc to find every live descendant of `root_pid`, regardless of which
+// process group or session they end up in - needed because launchers like
+// umu-run re-session (setsid) the process tree they spawn, which takes it out
+// of the process group we set on the direct child at launch time.
+#[cfg(target_os = "linux")]
+fn collect_descendant_pids(root_pid: i32) -> Vec<i32> {
+    use std::fs;
+
+    let mut parent_of: HashMap<i32, i32> = HashMap::new();
+    if let Ok(entries) = fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() else {
+                continue;
+            };
+            let Ok(status) = fs::read_to_string(entry.path().join("status")) else {
+                continue;
+            };
+            let ppid = status
+                .lines()
+                .find_map(|line| line.strip_prefix("PPid:"))
+                .and_then(|v| v.trim().parse::<i32>().ok());
+            if let Some(ppid) = ppid {
+                parent_of.insert(pid, ppid);
+            }
+        }
+    }
+
+    let mut descendants = Vec::new();
+    let mut queue = vec![root_pid];
+    while let Some(pid) = queue.pop() {
+        for (&child, &parent) in parent_of.iter() {
+            if parent == pid && !descendants.contains(&child) {
+                descendants.push(child);
+                queue.push(child);
+            }
+        }
+    }
+    descendants
+}
+
+#[cfg(unix)]
+fn send_signal_to_all(pids: &[i32], signal: i32) {
+    for &pid in pids {
+        // Safety: signalling PIDs we found as descendants of our own tracked
+        // child (or the child itself). ESRCH (already gone) is expected and fine.
+        if unsafe { libc::kill(pid, signal) } != 0 {
+            let err = io::Error::last_os_error();
+            if err.raw_os_error() != Some(libc::ESRCH) {
+                warn!("failed to send signal {signal} to pid {pid}: {err}");
+            }
+        }
+    }
+}
+
+// Whether a pid is still a real, running process. Zombies (already exited,
+// just not yet reaped by their parent) count as dead for our purposes - the
+// game itself has stopped running even if its process table entry lingers.
+#[cfg(target_os = "linux")]
+fn pid_alive(pid: i32) -> bool {
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    // Format is "pid (comm) state ...", and comm can itself contain ')', so
+    // find the *last* ')' before reading the state field after it.
+    stat.rfind(')')
+        .and_then(|i| stat[i + 1..].trim_start().chars().next())
+        .map(|state| state != 'Z')
+        .unwrap_or(false)
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn pid_alive(pid: i32) -> bool {
+    unsafe { libc::kill(pid, 0) == 0 }
 }
 
 pub trait ProcessHandler: Send + 'static {

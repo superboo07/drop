@@ -82,6 +82,8 @@ import {
 } from "@heroicons/vue/20/solid";
 import Launch from "./GameOptions/Launch.vue";
 import Updates from "./GameOptions/Updates.vue";
+import Storage from "./GameOptions/Storage.vue";
+import Proton from "./GameOptions/Proton.vue";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowPathIcon } from "@heroicons/vue/24/solid";
 import type { GameVersion } from "~/types";
@@ -117,8 +119,17 @@ const tabs: Array<{ name: string; icon: Component; page: Component }> = [
   {
     name: "Storage",
     icon: ServerIcon,
-    page: h("div"),
+    page: Storage,
   },
+  ...(protonEnabled
+    ? [
+        {
+          name: "Proton",
+          icon: h("img", { src: "/proton-logo.png" }),
+          page: Proton,
+        },
+      ]
+    : []),
 ];
 const currentTabIndex = ref(0);
 

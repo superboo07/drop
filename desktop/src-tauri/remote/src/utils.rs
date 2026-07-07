@@ -174,6 +174,8 @@ pub fn get_client_async() -> ClientWithMiddleware {
     let normal_client = client
         .use_rustls_tls()
         .user_agent("Drop Desktop Client")
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(25))
         .build()
         .expect("Failed to build asynchronous client");
 

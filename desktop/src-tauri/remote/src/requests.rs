@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use database::{DB};
 use reqwest_middleware::Error;
 use url::Url;
@@ -5,6 +7,12 @@ use url::Url;
 use crate::{
     auth::generate_authorization_header, error::RemoteAccessError, utils::DROP_CLIENT_ASYNC,
 };
+
+/// Requests through `DROP_CLIENT_ASYNC` must set this explicitly per-request:
+/// the client-level default timeout isn't reliably honored through the
+/// reqwest-middleware wrapper, so relying on it lets a stalled request hang
+/// forever instead of failing (observed hanging indefinitely on a Steam Deck).
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(25);
 
 pub fn generate_url(
     path_components: &[&str],
@@ -25,6 +33,7 @@ pub async fn make_authenticated_get(url: Url) -> Result<reqwest::Response, Error
     DROP_CLIENT_ASYNC
         .get(url)
         .header("Authorization", generate_authorization_header())
+        .timeout(REQUEST_TIMEOUT)
         .send()
         .await
 }

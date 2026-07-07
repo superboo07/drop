@@ -73,20 +73,36 @@ pub fn read_proton_path(proton_path: PathBuf) -> Result<Option<ProtonPath>, io::
     Ok(None)
 }
 
-pub fn discover_proton_paths() -> Result<Vec<ProtonPath>, io::Error> {
+pub fn discover_proton_paths() -> Vec<ProtonPath> {
     let mut results = Vec::new();
 
     for search_path in &*SEARCH_PATHS {
-        if let Ok(potential_dirs) = read_dir(search_path) {
-            for proton_path in potential_dirs {
-                if let Some(proton) = read_proton_path(proton_path?.path())? {
-                    results.push(proton);
+        let Ok(potential_dirs) = read_dir(search_path) else {
+            continue;
+        };
+        for proton_path in potential_dirs {
+            // A single unreadable/broken entry (a dangling symlink, a
+            // permissions hiccup, or Steam itself touching this directory
+            // mid-scan) shouldn't abort discovery of every other candidate.
+            let proton_path = match proton_path {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("skipping unreadable proton search entry: {e}");
+                    continue;
                 }
+            };
+            match read_proton_path(proton_path.path()) {
+                Ok(Some(proton)) => results.push(proton),
+                Ok(None) => {}
+                Err(e) => warn!(
+                    "skipping unreadable proton candidate {}: {e}",
+                    proton_path.path().display()
+                ),
             }
         }
     }
 
-    Ok(results)
+    results
 }
 
 #[derive(Serialize)]
@@ -104,7 +120,7 @@ pub struct ProtonPaths {
 
 #[tauri::command]
 pub async fn fetch_proton_paths() -> Result<ProtonPaths, String> {
-    let autodiscovered = discover_proton_paths().map_err(|v| v.to_string())?;
+    let autodiscovered = discover_proton_paths();
 
     let db_lock = borrow_db_checked();
 
@@ -112,7 +128,11 @@ pub async fn fetch_proton_paths() -> Result<ProtonPaths, String> {
         .applications
         .additional_proton_paths
         .iter()
-        .flat_map(|v| read_proton_path(PathBuf::from(v)))
+        .filter_map(|v| {
+            read_proton_path(PathBuf::from(v))
+                .inspect_err(|e| warn!("skipping unreadable custom proton path {v}: {e}"))
+                .ok()
+        })
         .flatten()
         .collect::<Vec<ProtonPath>>();
 

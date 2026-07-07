@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Clone, Copy, Serialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Eq, PartialEq)]
 pub enum AppStatus {
     NotConfigured,
     Offline,

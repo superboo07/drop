@@ -35,6 +35,7 @@ use ::remote::{
     cache::clear_cached_object,
     error::RemoteAccessError,
     fetch_object::fetch_object_wrapper,
+    requests::REQUEST_TIMEOUT,
     server_proto::handle_server_proto_wrapper,
     utils::{DROP_APP_HANDLE, DROP_CLIENT_ASYNC},
 };
@@ -231,6 +232,7 @@ pub fn run() {
             quit,
             fetch_system_data,
             open_fs,
+            log_frontend,
             // User utils
             update_settings,
             fetch_settings,
@@ -339,36 +341,23 @@ pub fn run() {
                     )
                     .expect("failed to create frontend webview");
 
+                // On Linux/Windows, `on_open_url` only fires when a *second*
+                // instance is forwarded to this already-running one (via the
+                // single-instance plugin) -- it is NOT emitted for the
+                // initial launch itself (e.g. Steam launching Drop fresh
+                // with `drop://launch/<id>` as a plain CLI argument, when
+                // Drop wasn't already running). That initial URL has to be
+                // read separately via `get_current()`.
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    for url in &urls {
+                        handle_deep_link_url(url, &handle);
+                    }
+                }
+
                 app.deep_link().on_open_url(move |event| {
                     debug!("handling drop:// url");
-                    let binding = event.urls();
-                    let url = match binding.first() {
-                        Some(url) => url,
-                        None => {
-                            warn!("No value recieved from deep link. Is this a drop server?");
-                            return;
-                        }
-                    };
-                    if let Some("handshake") = url.host_str() {
-                        tauri::async_runtime::spawn(recieve_handshake(
-                            handle.clone(),
-                            url.path().to_string(),
-                        ));
-                    } else if let Some("launch") = url.host_str() {
-                        // Used by the "Add to Steam" non-Steam shortcut:
-                        // Steam launches Drop with this as an argument
-                        // (handed off to us here as a deep link), starting
-                        // the game's first launch option.
-                        let game_id = url.path().trim_start_matches('/').to_string();
-                        if game_id.is_empty() {
-                            warn!("drop://launch/ deep link missing a game id");
-                        } else {
-                            info!("launching game {game_id} via deep link");
-                            if let Err(e) = ::process::PROCESS_MANAGER.lock().launch_process(game_id, 0)
-                            {
-                                warn!("Failed to launch game via deep link: {e}");
-                            }
-                        }
+                    for url in event.urls() {
+                        handle_deep_link_url(&url, &handle);
                     }
                 });
                 let open_menu_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>)
@@ -413,18 +402,22 @@ pub fn run() {
                         )
                         .menu(&menu)
                         .on_menu_event(|app, event| match event.id.as_ref() {
-                            "open" => {
-                                #[cfg(target_os = "linux")]
-                                {
-                                    // Resume webview rendering after showing
-                                    app_emit!(app, "window_visibility_change", ());
-                                }
+                            "open" => match app.get_window("main") {
+                                Some(window) => {
+                                    #[cfg(target_os = "linux")]
+                                    {
+                                        // Resume webview rendering after showing
+                                        app_emit!(app, "window_visibility_change", ());
+                                    }
 
-                                app.get_window("main")
-                                    .expect("Failed to get main window")
-                                    .show()
-                                    .expect("Failed to show window");
-                            }
+                                    if let Err(e) = window.show() {
+                                        warn!("failed to show main window: {e}");
+                                    }
+                                }
+                                None => warn!(
+                                    "tray 'open' clicked but no main window exists"
+                                ),
+                            },
                             "quit" => {
                                 app.exit(0);
                             }
@@ -537,6 +530,30 @@ fn run_on_tray<T: FnOnce()>(f: T) {
     (f)();
 }
 
+fn handle_deep_link_url(url: &Url, handle: &AppHandle) {
+    if let Some("handshake") = url.host_str() {
+        tauri::async_runtime::spawn(recieve_handshake(
+            handle.clone(),
+            url.path().to_string(),
+        ));
+    } else if let Some("launch") = url.host_str() {
+        // Used by the "Add to Steam" non-Steam shortcut:
+        // Steam launches Drop with this as an argument (handed off to us
+        // here as a deep link), starting the game's first launch option.
+        let game_id = url.path().trim_start_matches('/').to_string();
+        if game_id.is_empty() {
+            warn!("drop://launch/ deep link missing a game id");
+        } else {
+            info!("launching game {game_id} via deep link");
+            if let Err(e) = ::process::PROCESS_MANAGER.lock().launch_process(game_id, 0) {
+                warn!("Failed to launch game via deep link: {e}");
+            }
+        }
+    } else {
+        warn!("unhandled drop:// url: {url}");
+    }
+}
+
 // TODO: Refactor
 pub async fn recieve_handshake(app: AppHandle, path: String) {
     // Tell the app we're processing
@@ -551,7 +568,9 @@ pub async fn recieve_handshake(app: AppHandle, path: String) {
 
     let app_state = app.state::<Mutex<AppState>>();
 
+    debug!("calling auth::setup to fetch user");
     let (app_status, user) = auth::setup().await;
+    debug!("auth::setup returned, status = {app_status:?}");
 
     let mut state_lock = app_state.lock();
 
@@ -563,7 +582,9 @@ pub async fn recieve_handshake(app: AppHandle, path: String) {
 
     drop(state_lock);
 
+    debug!("emitting auth/finished");
     app_emit!(&app, "auth/finished", ());
+    debug!("auth/finished emitted");
 }
 
 // TODO: Refactor
@@ -591,7 +612,12 @@ async fn recieve_handshake_logic(app: &AppHandle, path: String) -> Result<(), Re
 
     let endpoint = base_url.join("/api/v1/client/auth/handshake")?;
     let client = DROP_CLIENT_ASYNC.clone();
-    let response = client.post(endpoint).json(&body).send().await?;
+    let response = client
+        .post(endpoint)
+        .json(&body)
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await?;
     debug!("handshake responsded with {}", response.status().as_u16());
     if !response.status().is_success() {
         return Err(RemoteAccessError::InvalidResponse(response.json().await?));
@@ -605,16 +631,21 @@ async fn recieve_handshake_logic(app: &AppHandle, path: String) -> Result<(), Re
 
     let web_token = {
         let header = generate_authorization_header();
+        debug!("requesting web token");
         let token = client
             .post(base_url.join("/api/v1/client/user/webtoken")?)
             .header("Authorization", header)
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await?;
+        debug!("web token request responded with {}", token.status().as_u16());
 
         token.text().await?
     };
+    debug!("web token received, fetching user");
     let mut handle = borrow_db_mut_checked();
     handle.auth.as_mut().unwrap().web_token = Some(web_token);
+    drop(handle);
 
     Ok(())
 }

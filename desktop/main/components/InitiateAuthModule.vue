@@ -47,6 +47,30 @@
             </span>
           </div>
 
+          <div class="mt-5" v-if="authLink">
+            <h1 class="text-zinc-100 font-semibold">Browser didn't open?</h1>
+            <p class="mt-1 text-zinc-400 text-sm">
+              Copy this link into your browser to continue signing in.
+            </p>
+            <div class="inline-flex gap-x-1 mt-2 w-full">
+              <input
+                id="auth-link"
+                type="text"
+                readonly
+                class="grow block w-full rounded-md border-0 py-1.5 px-3 shadow-sm bg-zinc-950/20 text-zinc-300 ring-1 ring-inset ring-zinc-800 sm:text-sm sm:leading-6"
+                :value="authLink"
+                @focus="($event.target as HTMLInputElement).select()"
+              />
+              <button
+                type="button"
+                @click="copyAuthLink"
+                class="px-3 py-1.5 shrink-0 rounded-md bg-zinc-700 text-sm font-semibold text-white"
+              >
+                {{ copied ? "Copied!" : "Copy" }}
+              </button>
+            </div>
+          </div>
+
           <div class="mt-5" v-if="offerManual">
             <h1 class="text-zinc-100 font-semibold">Having trouble?</h1>
             <p class="mt-1 text-zinc-400 text-sm">
@@ -127,7 +151,6 @@
 <script setup lang="ts">
 import { XCircleIcon } from "@heroicons/vue/16/solid";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/vue/20/solid";
-import { invoke } from "@tauri-apps/api/core";
 
 const loading = ref(false);
 const error = ref<string | undefined>();
@@ -137,12 +160,16 @@ const offerManual = ref(false);
 const manualToken = ref("");
 const manualLoading = ref(false);
 
+const authLink = ref<string | undefined>();
+const copied = ref(false);
+
 async function auth() {
-  await invoke("auth_initiate");
+  authLink.value = await invokeWithTimeout<string>("auth_initiate");
 }
 
 function authWrapper_wrapper() {
   error.value = undefined;
+  authLink.value = undefined;
   loading.value = true;
   auth().catch((e) => {
     loading.value = false;
@@ -154,8 +181,21 @@ function authWrapper_wrapper() {
   }, 2000);
 }
 
+async function copyAuthLink() {
+  if (!authLink.value) return;
+  try {
+    await navigator.clipboard.writeText(authLink.value);
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1500);
+  } catch {
+    // Clipboard API unavailable; the input field can still be selected and copied manually.
+  }
+}
+
 async function continueManual() {
-  await invoke("manual_recieve_handshake", { token: manualToken.value });
+  await invokeWithTimeout("manual_recieve_handshake", {
+    token: manualToken.value,
+  });
 }
 
 function continueManual_wrapper() {

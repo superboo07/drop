@@ -121,7 +121,7 @@ pub async fn retry_connect(state: tauri::State<'_, Mutex<AppState>>) -> Result<(
 }
 
 #[tauri::command]
-pub fn auth_initiate() -> Result<(), RemoteAccessError> {
+pub fn auth_initiate() -> Result<String, RemoteAccessError> {
     let base_url = {
         let db_lock = borrow_db_checked();
         Url::parse(&db_lock.base_url.clone())?
@@ -132,7 +132,7 @@ pub fn auth_initiate() -> Result<(), RemoteAccessError> {
 
     debug!("opening web browser to continue authentication");
     webbrowser_open(complete_redir_url.as_ref());
-    Ok(())
+    Ok(complete_redir_url.to_string())
 }
 
 #[derive(Deserialize)]

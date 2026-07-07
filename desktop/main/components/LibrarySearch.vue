@@ -230,9 +230,10 @@ async function calculateGamesLogic(clearAll = false, forceRefresh = false) {
   }
   // If we update immediately, the navigation gets re-rendered before we
   // add all the necessary state, and it freaks tf out
-  const library = await invoke<FetchLibraryResponse>("fetch_library", {
-    hardRefresh: forceRefresh,
-  });
+  const library = await invokeWithTimeout<FetchLibraryResponse>(
+    "fetch_library",
+    { hardRefresh: forceRefresh },
+  );
   const allGames = [
     ...library.library,
     ...library.collections
@@ -243,16 +244,31 @@ async function calculateGamesLogic(clearAll = false, forceRefresh = false) {
     ...library.missing,
   ].filter((v, i, a) => a.indexOf(v) === i);
 
-  for (const game of allGames) {
-    if (games[game.id]) continue;
-    games[game.id] = await useGame(game.id);
+  const results = await Promise.allSettled(
+    allGames
+      .filter((game) => !games[game.id])
+      .map(async (game) => {
+        games[game.id] = await useGame(game.id);
+      }),
+  );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("failed to fetch a library game", result.reason);
+    }
   }
+
+  // Games whose fetch above timed out/failed never got an entry in `games`,
+  // and the template assumes `games[id]` is always present -- filter those
+  // out here rather than crashing the whole page over one bad entry.
+  const available = (g: { id: string }) => !!games[g.id];
 
   const libraryCollection = {
     id: "library",
     name: "Library",
     isDefault: true,
-    entries: library.library.map((e) => ({ gameId: e.id, game: e })),
+    entries: library.library
+      .filter(available)
+      .map((e) => ({ gameId: e.id, game: e })),
   } satisfies Collection;
 
   const otherCollection = {
@@ -260,7 +276,9 @@ async function calculateGamesLogic(clearAll = false, forceRefresh = false) {
     name: "Tools & Launchers",
     isDefault: false,
     isTools: true,
-    entries: library.other.map((v) => ({ gameId: v.id, game: v })),
+    entries: library.other
+      .filter(available)
+      .map((v) => ({ gameId: v.id, game: v })),
   } satisfies Collection;
 
   const missingCollection = {
@@ -268,13 +286,18 @@ async function calculateGamesLogic(clearAll = false, forceRefresh = false) {
     name: "Delisted",
     isDefault: false,
     isTools: true,
-    entries: library.missing.map((v) => ({ gameId: v.id, game: v })),
+    entries: library.missing
+      .filter(available)
+      .map((v) => ({ gameId: v.id, game: v })),
   };
 
   loading.value = false;
   collections.value = [
     libraryCollection,
-    ...library.collections,
+    ...library.collections.map((c) => ({
+      ...c,
+      entries: c.entries.filter((e) => available(e.game)),
+    })),
     ...(library.other.length > 0 ? [otherCollection] : []),
     ...(library.missing.length > 0 ? [missingCollection] : []),
   ];
@@ -343,7 +366,9 @@ listen("update_library", async (event) => {
   let oldNavigation = currentNavigation.value;
   await calculateGames(false, true);
   if (oldNavigation !== currentNavigation.value) {
-    router.push("/library");
+    router.push("/library").catch((e) => {
+      console.error("router.push to /library failed", e);
+    });
   }
 });
 </script>

@@ -77,7 +77,6 @@
 
 <script setup lang="ts">
 import { XCircleIcon } from "@heroicons/vue/16/solid";
-import { invoke } from "@tauri-apps/api/core";
 
 definePageMeta({
   layout: "mini",
@@ -101,8 +100,8 @@ async function connect() {
     ? url.value
     : `https://${url.value}`;
 
-  const result = await invoke("use_remote", { url: newUrl });
-  router.push("/auth");
+  const result = await invokeWithTimeout("use_remote", { url: newUrl });
+  await router.push("/auth");
 }
 
 function connect_wrapper() {

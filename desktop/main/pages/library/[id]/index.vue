@@ -673,7 +673,6 @@ import {
   ServerIcon,
   XCircleIcon,
 } from "@heroicons/vue/24/solid";
-import { invoke } from "@tauri-apps/api/core";
 import { micromark } from "micromark";
 import { InstalledType } from "~/types";
 
@@ -701,10 +700,11 @@ async function installFlow() {
   installError.value = undefined;
 
   try {
-    versionOptions.value = await invoke("fetch_game_version_options", {
-      gameId: game.id,
-    });
-    installDirs.value = await invoke("fetch_download_dir_stats");
+    versionOptions.value = await invokeWithTimeout(
+      "fetch_game_version_options",
+      { gameId: game.id },
+    );
+    installDirs.value = await invokeWithTimeout("fetch_download_dir_stats");
   } catch (error) {
     installError.value = (error as string).toString();
     versionOptions.value = undefined;
@@ -733,7 +733,7 @@ async function install() {
     ];
 
     for (const game of games) {
-      await invoke("download_game", {
+      await invokeWithTimeout("download_game", {
         gameId: game.gameId,
         versionId: game.versionId,
         installDir: installDir.value,
@@ -766,7 +766,7 @@ function formatVersionOptionText(index: number) {
 
 async function resumeDownload() {
   try {
-    await invoke("resume_download", { gameId: game.id });
+    await invokeWithTimeout("resume_download", { gameId: game.id });
   } catch (e) {
     console.error(e);
   }
@@ -784,7 +784,7 @@ async function launch() {
     return;
   }
   try {
-    const fetchedLaunchOptions = await invoke<Array<{ name: string }>>(
+    const fetchedLaunchOptions = await invokeWithTimeout<Array<{ name: string }>>(
       "get_launch_options",
       { id: game.id },
     );
@@ -814,7 +814,7 @@ const dependencyRequiredModal = ref<
 async function launchIndex(index: number) {
   launchOptions.value = undefined;
   try {
-    const result = await invoke<LaunchResult>("launch_game", {
+    const result = await invokeWithTimeout<LaunchResult>("launch_game", {
       id: game.id,
       index,
     });
@@ -838,16 +838,16 @@ async function launchIndex(index: number) {
 }
 
 async function queue() {
-  router.push("/queue");
+  await router.push("/queue");
 }
 
 async function uninstall() {
-  await invoke("uninstall_game", { gameId: game.id });
+  await invokeWithTimeout("uninstall_game", { gameId: game.id });
 }
 
 async function kill() {
   try {
-    await invoke("kill_game", { gameId: game.id });
+    await invokeWithTimeout("kill_game", { gameId: game.id });
   } catch (e) {
     createModal(
       ModalType.Notification,
@@ -864,7 +864,10 @@ async function kill() {
 
 async function addToSteam() {
   try {
-    await invoke("add_to_steam", { gameId: game.id, appName: game.mName });
+    await invokeWithTimeout("add_to_steam", {
+      gameId: game.id,
+      appName: game.mName,
+    });
     createModal(
       ModalType.Notification,
       {

@@ -38,7 +38,6 @@
 </template>
 
 <script setup lang="ts">
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRouter } from "#imports";
 import { XCircleIcon } from "@heroicons/vue/16/solid";
@@ -49,14 +48,16 @@ const error = ref<string | null>(null);
 // Listen for auth events
 onMounted(async () => {
   await listen("auth/signedout", () => {
-    router.push("/auth/signedout");
+    router.push("/auth/signedout").catch((e) => {
+      console.error("router.push to /auth/signedout failed", e);
+    });
   });
 });
 
 async function signOut() {
   try {
     error.value = null;
-    await invoke("sign_out");
+    await invokeWithTimeout("sign_out");
   } catch (e) {
     error.value = `Failed to sign out: ${e}`;
   }

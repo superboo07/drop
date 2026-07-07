@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-
 interface ProtonPaths {
   data: Ref<{
     autodiscovered: ProtonPath[];
@@ -16,7 +14,7 @@ const protonPaths = useState<ProtonPaths["data"]["value"]>(
 
 export const useProtonPaths = async (): Promise<ProtonPaths> => {
   const refresh = async () => {
-    protonPaths.value = await invoke("fetch_proton_paths");
+    protonPaths.value = await invokeWithTimeout("fetch_proton_paths");
   };
   if (protonPaths.value)
     return {

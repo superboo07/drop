@@ -44,7 +44,6 @@
 
 <script setup lang="ts">
 import { FolderIcon } from "@heroicons/vue/24/outline";
-import { invoke } from "@tauri-apps/api/core";
 
 const props = defineProps<{
   gameId: string;
@@ -57,7 +56,7 @@ const winePrefixError = ref<string | undefined>();
 async function openInstallDir() {
   installDirError.value = undefined;
   try {
-    await invoke("open_game_install_dir", { gameId: props.gameId });
+    await invokeWithTimeout("open_game_install_dir", { gameId: props.gameId });
   } catch (error) {
     installDirError.value = (error as unknown as string).toString();
   }
@@ -66,7 +65,7 @@ async function openInstallDir() {
 async function openWinePrefix() {
   winePrefixError.value = undefined;
   try {
-    await invoke("open_game_wine_prefix", { gameId: props.gameId });
+    await invokeWithTimeout("open_game_wine_prefix", { gameId: props.gameId });
   } catch (error) {
     winePrefixError.value = (error as unknown as string).toString();
   }

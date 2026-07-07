@@ -61,7 +61,6 @@
 
 <script setup lang="ts">
 import { Switch } from "@headlessui/vue";
-import { invoke } from "@tauri-apps/api/core";
 import type { Settings } from "~/types";
 
 defineProps<{}>();
@@ -70,18 +69,18 @@ const autostartEnabled = ref<boolean>(false);
 const quitOnClose = ref<boolean>(false);
 
 // Load initial state
-invoke("get_autostart_enabled").then((enabled) => {
+invokeWithTimeout("get_autostart_enabled").then((enabled) => {
   autostartEnabled.value = enabled as boolean;
 });
 
-invoke<Settings>("fetch_settings").then((settings) => {
+invokeWithTimeout<Settings>("fetch_settings").then((settings) => {
   quitOnClose.value = settings.quitOnClose;
 });
 
 // Watch for changes and update autostart
 watch(autostartEnabled, async (newValue: boolean) => {
   try {
-    await invoke("toggle_autostart", { enabled: newValue });
+    await invokeWithTimeout("toggle_autostart", { enabled: newValue });
   } catch (error) {
     console.error("Failed to toggle autostart:", error);
     // Revert the toggle if it failed
@@ -91,7 +90,9 @@ watch(autostartEnabled, async (newValue: boolean) => {
 
 watch(quitOnClose, async (newValue: boolean) => {
   try {
-    await invoke("update_settings", { newSettings: { quitOnClose: newValue } });
+    await invokeWithTimeout("update_settings", {
+      newSettings: { quitOnClose: newValue },
+    });
   } catch (error) {
     console.error("Failed to update quit-on-close setting:", error);
     quitOnClose.value = !newValue;

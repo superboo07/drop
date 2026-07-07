@@ -158,7 +158,6 @@
 </template>
 
 <script setup lang="ts">
-import { invoke } from "@tauri-apps/api/core";
 import type { ProtonPath } from "~/composables/game";
 import {
   Listbox,
@@ -174,7 +173,7 @@ import type { GameVersion } from "~/types";
 
 const model = defineModel<GameVersion["userConfiguration"]>({ required: true });
 
-const protonPaths = await invoke<{
+const protonPaths = await invokeWithTimeout<{
   autodiscovered: ProtonPath[];
   custom: ProtonPath[];
   default?: string;

@@ -75,14 +75,13 @@
 
 <script setup lang="ts">
 import { ArrowPathIcon } from "@heroicons/vue/24/outline";
-import { invoke } from "@tauri-apps/api/core";
 
 definePageMeta({
   layout: "mini",
 });
 
 async function retry() {
-  await invoke("retry_connect");
+  await invokeWithTimeout("retry_connect");
   location.reload();
 }
 </script>

@@ -291,7 +291,6 @@
 <script setup lang="ts">
 import { CheckCircleIcon, XCircleIcon } from "@heroicons/vue/16/solid";
 import { ExclamationTriangleIcon } from "@heroicons/vue/24/solid";
-import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 const appState = useAppState();
@@ -316,7 +315,7 @@ async function add() {
   if (!path.value) return;
   pickError.value = null;
   try {
-    await invoke("add_proton_layer", { path: path.value });
+    await invokeWithTimeout("add_proton_layer", { path: path.value });
     path.value = null;
     pickLayerModal.value = false;
     paths.refresh();
@@ -332,7 +331,7 @@ function cancel() {
 
 async function deleteCustom(index: number) {
   if (!paths.data.value) return;
-  await invoke("remove_proton_layer", { index });
+  await invokeWithTimeout("remove_proton_layer", { index });
   const deleted = paths.data.value.custom.splice(index);
   if (paths.data.value.default == deleted[0].path) {
     paths.data.value.default = undefined;

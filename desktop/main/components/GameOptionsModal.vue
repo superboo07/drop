@@ -84,7 +84,6 @@ import Launch from "./GameOptions/Launch.vue";
 import Updates from "./GameOptions/Updates.vue";
 import Storage from "./GameOptions/Storage.vue";
 import Proton from "./GameOptions/Proton.vue";
-import { invoke } from "@tauri-apps/api/core";
 import { ArrowPathIcon } from "@heroicons/vue/24/solid";
 import type { GameVersion } from "~/types";
 
@@ -141,7 +140,7 @@ async function save() {
   saveLoading.value = true;
   saveError.value = undefined;
   try {
-    await invoke("update_game_configuration", {
+    await invokeWithTimeout("update_game_configuration", {
       gameId: game.game.id,
       options: configuration.value,
     });

@@ -120,7 +120,7 @@ features = ["derive", "rc"]
 
 [dependencies.tauri]
 version = "2.9.5"
-features = ["protocol-asset", "tray-icon", "unstable"]
+features = ["protocol-asset", "tray-icon", "unstable", "devtools"]
 
 [dependencies.tokio]
 version = "1.40.0"

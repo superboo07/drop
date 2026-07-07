@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   Game,
@@ -30,7 +29,7 @@ export const useGame = async (gameId: string) => {
       game: Game;
       status: RawGameStatus;
       version?: GameVersion;
-    } = await invoke("fetch_game", {
+    } = await invokeWithTimeout("fetch_game", {
       gameId,
     });
     gameRegistry[gameId] = { game: data.game, version: ref(data.version) };

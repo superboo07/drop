@@ -184,7 +184,6 @@ import {
   TransitionRoot,
 } from "@headlessui/vue";
 import { FolderIcon, TrashIcon, XCircleIcon } from "@heroicons/vue/16/solid";
-import { invoke } from "@tauri-apps/api/core";
 import { Switch } from '@headlessui/vue'
 import { type Settings } from "~/types";
 
@@ -195,7 +194,7 @@ const createDirectoryLoading = ref(false);
 
 const dirs = ref<Array<string>>([]);
 
-const settings = await invoke<Settings>("fetch_settings");
+const settings = await invokeWithTimeout<Settings>("fetch_settings");
 const downloadThreads = ref(settings?.maxDownloadThreads ?? 4);
 const forceOffline = ref(settings?.forceOffline ?? false);
 
@@ -205,16 +204,20 @@ const saveState = reactive({
 });
 
 async function updateDirs() {
-  const newDirs = await invoke<Array<string>>("fetch_download_dir_stats");
+  const newDirs = await invokeWithTimeout<Array<string>>(
+    "fetch_download_dir_stats",
+  );
   dirs.value = newDirs;
 }
 
 await updateDirs();
 
 async function selectDirectoryDialog(): Promise<string> {
-  const res = await invoke("plugin:dialog|open", {
-    options: { directory: true },
-  });
+  const res = await invokeWithTimeout(
+    "plugin:dialog|open",
+    { options: { directory: true } },
+    Infinity,
+  );
 
   return res as string;
 }
@@ -241,7 +244,9 @@ async function submitDirectory() {
     createDirectoryLoading.value = true;
 
     // Add directory
-    await invoke("add_download_dir", { newDir: currentDirectory.value });
+    await invokeWithTimeout("add_download_dir", {
+      newDir: currentDirectory.value,
+    });
 
     // Update list
     await updateDirs();
@@ -256,15 +261,18 @@ async function submitDirectory() {
 }
 
 async function deleteDirectory(index: number) {
-  await invoke("delete_download_dir", { index });
+  await invokeWithTimeout("delete_download_dir", { index });
   await updateDirs();
 }
 
 async function saveSettings() {
   try {
     saveState.loading = true;
-    await invoke("update_settings", {
-      newSettings: { maxDownloadThreads: downloadThreads.value, forceOffline: forceOffline.value },
+    await invokeWithTimeout("update_settings", {
+      newSettings: {
+        maxDownloadThreads: downloadThreads.value,
+        forceOffline: forceOffline.value,
+      },
     });
 
     // Show success state

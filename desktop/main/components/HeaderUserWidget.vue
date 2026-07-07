@@ -78,7 +78,6 @@ import { ChevronDownIcon } from "@heroicons/vue/16/solid";
 import type { NavigationItem } from "../types";
 import HeaderWidget from "./HeaderWidget.vue";
 import { useAppState } from "~/composables/app-state";
-import { invoke } from "@tauri-apps/api/core";
 
 const open = ref(false);
 const router = useRouter();
@@ -90,13 +89,15 @@ const state = useAppState();
 const profilePictureUrl: string = await useObject(
   state.value?.user?.profilePictureObjectId ?? ""
 );
-const adminUrl: string = await invoke("gen_drop_url", {
+const adminUrl: string = await invokeWithTimeout("gen_drop_url", {
   path: "/admin",
 });
 
 function navigate(close: () => any, to: NavigationItem) {
   close();
-  router.push(to.route);
+  router.push(to.route).catch((e) => {
+    console.error(`router.push to ${to.route} failed`, e);
+  });
 }
 
 const navigation: NavigationItem[] = [

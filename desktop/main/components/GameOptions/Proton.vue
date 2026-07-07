@@ -135,7 +135,6 @@
 <script setup lang="ts">
 import { Cog6ToothIcon, MagnifyingGlassIcon } from "@heroicons/vue/24/outline";
 import { Switch } from "@headlessui/vue";
-import { invoke } from "@tauri-apps/api/core";
 import type { GameVersion } from "~/types";
 
 const props = defineProps<{
@@ -188,7 +187,7 @@ const filteredVerbs = computed(() => {
     .slice(0, 50);
 });
 
-invoke<WinetricksVerb[]>("list_winetricks_verbs")
+invokeWithTimeout<WinetricksVerb[]>("list_winetricks_verbs")
   .then((result) => (verbs.value = result))
   .catch((error) => {
     verbsError.value = (error as unknown as string).toString();
@@ -201,7 +200,10 @@ async function install(verb: string) {
   installError.value = false;
   installStatus.value = `Starting install of "${verb}"...`;
   try {
-    await invoke("install_winetricks_verb", { gameId: props.gameId, verb });
+    await invokeWithTimeout("install_winetricks_verb", {
+      gameId: props.gameId,
+      verb,
+    });
     installStatus.value = `Started installing "${verb}". Check the game's logs if it doesn't seem to do anything.`;
   } catch (error) {
     installError.value = true;
@@ -214,7 +216,7 @@ const winecfgError = ref<string | undefined>();
 async function runWinecfg() {
   winecfgError.value = undefined;
   try {
-    await invoke("run_winecfg", { gameId: props.gameId });
+    await invokeWithTimeout("run_winecfg", { gameId: props.gameId });
   } catch (error) {
     winecfgError.value = (error as unknown as string).toString();
   }

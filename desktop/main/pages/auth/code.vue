@@ -27,9 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { invoke } from "@tauri-apps/api/core";
-
-const code = await invoke<string>("auth_initiate_code");
+const code = await invokeWithTimeout<string>("auth_initiate_code");
 
 definePageMeta({
   layout: "mini",

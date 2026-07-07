@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { StarIcon } from "@heroicons/vue/24/solid";
-import { invoke } from "@tauri-apps/api/core";
 
 const props = defineProps<{
   path?: string;
@@ -12,7 +11,7 @@ const isDefault = computed(() => props.path == model.value);
 
 async function setDefault() {
   if (!props.path) return;
-  await invoke("set_default", { path: props.path });
+  await invokeWithTimeout("set_default", { path: props.path });
   model.value = props.path;
 }
 </script>

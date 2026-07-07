@@ -82,7 +82,6 @@
 </template>
 
 <script setup lang="ts">
-import { invoke } from "@tauri-apps/api/core";
 import { platform, type } from "@tauri-apps/plugin-os";
 import {
   FingerPrintIcon,
@@ -100,7 +99,7 @@ const platformInfo = ref("Loading...");
 const baseUrl = ref<string | null>(null);
 const dataDir = ref<string | null>(null);
 
-const systemData = await invoke<{
+const systemData = await invokeWithTimeout<{
   clientId: string;
   baseUrl: string;
   dataDir: string;
@@ -116,7 +115,7 @@ platformInfo.value = currentPlatform;
 async function openDataDir() {
   if (!dataDir.value) return;
   try {
-    await invoke("open_fs", { path: dataDir.value });
+    await invokeWithTimeout("open_fs", { path: dataDir.value });
   } catch (error) {
     console.error("Failed to open data dir:", error);
   }
@@ -126,7 +125,7 @@ async function openLogFile() {
   if (!dataDir.value) return;
   try {
     const logPath = `${dataDir.value}/drop.log`;
-    await invoke("open_fs", { path: logPath });
+    await invokeWithTimeout("open_fs", { path: logPath });
   } catch (error) {
     console.error("Failed to open log file:", error);
   }

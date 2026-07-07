@@ -57,7 +57,6 @@
 </template>
 
 <script setup lang="ts">
-import { invoke } from "@tauri-apps/api/core";
 import { XCircleIcon } from "@heroicons/vue/24/solid";
 
 const model = defineModel<{ gameId: string; versionId: string }>({
@@ -66,7 +65,7 @@ const model = defineModel<{ gameId: string; versionId: string }>({
 
 const { game, status } = await useGame(model.value.gameId);
 
-const versionOptions = await invoke<Array<VersionOption>>(
+const versionOptions = await invokeWithTimeout<Array<VersionOption>>(
   "fetch_game_version_options",
   {
     gameId: game.id,
@@ -76,7 +75,9 @@ const version = versionOptions.find(
   (v) => v.versionId === model.value.versionId
 )!;
 
-const installDirs = await invoke<string[]>("fetch_download_dir_stats");
+const installDirs = await invokeWithTimeout<string[]>(
+  "fetch_download_dir_stats",
+);
 const installDir = ref(0);
 
 function cancel() {
@@ -90,7 +91,7 @@ const installLoading = ref(false);
 async function install() {
   try {
     installLoading.value = true;
-    await invoke("download_game", {
+    await invokeWithTimeout("download_game", {
       gameId: game.id,
       versionId: model.value.versionId,
       installDir: installDir.value,

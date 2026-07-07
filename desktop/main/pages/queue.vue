@@ -121,7 +121,6 @@
 
 <script setup lang="ts">
 import { ServerIcon, XMarkIcon, CloudIcon } from "@heroicons/vue/20/solid";
-import { invoke } from "@tauri-apps/api/core";
 import { type DownloadableMetadata, type Game, type GameStatus } from "~/types";
 
 // const actionNames = {
@@ -207,14 +206,14 @@ function loadGamesForQueue(v: typeof queue.value) {
 loadGamesForQueue(queue.value);
 
 async function onEnd(event: { oldIndex: number; newIndex: number }) {
-  await invoke("move_download_in_queue", {
+  await invokeWithTimeout("move_download_in_queue", {
     oldIndex: event.oldIndex,
     newIndex: event.newIndex,
   });
 }
 
 async function cancelGame(meta: DownloadableMetadata) {
-  await invoke("cancel_game", { meta });
+  await invokeWithTimeout("cancel_game", { meta });
 }
 
 function formatTime(seconds: number): string {

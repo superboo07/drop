@@ -2,7 +2,7 @@ use std::sync::nonpoison::Mutex;
 
 use database::{borrow_db_checked, borrow_db_mut_checked};
 use download_manager::DOWNLOAD_MANAGER;
-use log::{debug, error};
+use log::{debug, error, info, warn};
 use remote::requests::{generate_url, make_authenticated_get};
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
@@ -10,6 +10,19 @@ use tauri_plugin_opener::OpenerExt;
 use utils::external_open::open_externally;
 
 use crate::AppState;
+
+/// Mirrors frontend `console.*` calls into the same debug log the backend
+/// writes to, so a single `RUST_LOG=debug` capture covers both sides instead
+/// of requiring someone to separately open the webview inspector.
+#[tauri::command]
+pub fn log_frontend(level: String, message: String) {
+    match level.as_str() {
+        "error" => error!("[frontend] {message}"),
+        "warn" => warn!("[frontend] {message}"),
+        "info" => info!("[frontend] {message}"),
+        _ => debug!("[frontend] {message}"),
+    }
+}
 
 #[tauri::command]
 pub fn fetch_state(state: tauri::State<'_, Mutex<AppState>>) -> Result<String, String> {

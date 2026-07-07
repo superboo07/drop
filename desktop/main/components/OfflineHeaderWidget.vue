@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ArrowDownTrayIcon, CloudIcon } from "@heroicons/vue/20/solid";
-import { invoke } from "@tauri-apps/api/core";
 
 async function checkOffline() {
-  const isOffline = await invoke("check_online");
+  const isOffline = await invokeWithTimeout("check_online");
 }
 </script>
 

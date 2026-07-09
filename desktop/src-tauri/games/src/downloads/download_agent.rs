@@ -128,6 +128,7 @@ impl GameDownloadAgent {
         };
 
         result.ensure_manifest_exists().await?;
+        result.resync_hashes_with_server();
 
         let required_space = lock!(result.dl_info).as_ref().unwrap().install_size;
 
@@ -254,6 +255,39 @@ impl GameDownloadAgent {
         }
 
         Err(ApplicationDownloadError::Lock)
+    }
+
+    // If the server's manifest for a file we previously recorded as installed
+    // now reports a different hash than what's in our local .dropdata, this
+    // versionId's content was resynced/replaced server-side (the admin
+    // "editable game versions" feature) while it was already installed
+    // locally. Any chunks the download logic thinks are "already complete"
+    // may actually be stale content, so drop the chunk-completion cache and
+    // let the download pass re-verify/re-fetch everything against the fresh
+    // server data instead of skip-treating chunks that predate the resync.
+    fn resync_hashes_with_server(&self) {
+        let changed = {
+            let dl_info = lock!(self.dl_info);
+            let Some(dl_info) = dl_info.as_ref() else {
+                return;
+            };
+            let previously_installed = self.dropdata.get_installed_files();
+            previously_installed.iter().any(|(path, record)| {
+                matches!(
+                    (&record.server_hash, dl_info.file_hashes.get(path)),
+                    (Some(old_hash), Some(new_hash)) if old_hash != new_hash
+                )
+            })
+        };
+
+        if changed {
+            info!(
+                "server-side content changed for an already-installed version of {}, resyncing local chunk state",
+                self.metadata.id
+            );
+            self.dropdata.set_contexts(&[]);
+            self.dropdata.write();
+        }
     }
 
     // Sets up progress for download writes

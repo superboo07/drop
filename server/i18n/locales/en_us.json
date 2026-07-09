@@ -306,6 +306,10 @@
       "order": {
         "desc": "Drop encountered an error while updating the version: {error}",
         "title": "There an error while updating the version order"
+      },
+      "resync": {
+        "desc": "Drop encountered an error while resyncing the version: {error}",
+        "title": "There was an error resyncing the version"
       }
     }
   },
@@ -579,8 +583,24 @@
       "title": "Libraries",
       "version": {
         "description": "All versions imported for your game.",
+        "edit": {
+          "title": "Edit version"
+        },
         "noSetups": "No setups configured.",
         "noVersions": "You have no versions of this game available.",
+        "replace": {
+          "action": "Replace files",
+          "noneAvailable": "No staged uploads available",
+          "picker": "Staged upload to apply",
+          "title": "Replace version files"
+        },
+        "resync": {
+          "action": "Resync files",
+          "confirmDesc": "This will rescan {0}'s files on disk and update its manifest to match. Already-downloaded clients won't be affected unless they redownload.",
+          "confirmTitle": "Resync version files?",
+          "forceAction": "Resync anyway",
+          "forceTitle": "Delta versions depend on this one"
+        },
         "setupOnly": "Version configured as in setup-only mode.",
         "table": {
           "delta": "Update mode",

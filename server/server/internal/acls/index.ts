@@ -73,6 +73,7 @@ export const systemACLs = [
   "game:update",
   "game:delete",
   "game:version:update",
+  "game:version:resync",
   "game:version:delete",
   "game:image:new",
   "game:image:delete",

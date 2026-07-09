@@ -120,6 +120,38 @@ class GameSizeManager {
     await this.gameBreakdownCache.set(breakdownKey, result);
     return result;
   }
+
+  /**
+   * Busts the cached size for a version - needed any time its files or
+   * delta-chain topology change (see manifest/index.ts's invalidateManifestCache,
+   * which this mirrors for the size caches derived from the same data).
+   */
+  async invalidateVersion(versionId: string) {
+    const keys = await this.gameVersionsSizesCache.getKeys();
+    await Promise.all(
+      keys
+        .filter(
+          (k) =>
+            k === versionId ||
+            k.startsWith(`${versionId}-from-`) ||
+            k.includes(`-from-${versionId}`),
+        )
+        .map((k) => this.gameVersionsSizesCache.remove(k)),
+    );
+  }
+
+  /**
+   * Busts the cached whole-game size breakdown - its key embeds every
+   * version ID for the game, so any version's data changing invalidates it.
+   */
+  async invalidateGame(gameId: string) {
+    const keys = await this.gameBreakdownCache.getKeys();
+    await Promise.all(
+      keys
+        .filter((k) => k.startsWith(`${gameId} `))
+        .map((k) => this.gameBreakdownCache.remove(k)),
+    );
+  }
 }
 
 export const gameSizeManager = new GameSizeManager();

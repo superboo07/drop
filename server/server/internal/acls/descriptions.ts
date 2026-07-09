@@ -72,7 +72,10 @@ export const systemACLDescriptions: ObjectFromList<typeof systemACLs> = {
   "game:read": "Fetch a given game on this instance.",
   "game:update": "Update a game on this instance.",
   "game:delete": "Delete a game on this instance.",
-  "game:version:update": "Update the version order on a game.",
+  "game:version:update":
+    "Update version ordering and configuration (name, delta flag, launch/setup commands) for a game.",
+  "game:version:resync":
+    "Re-sync or replace a version's game files (local rescan or depot upload replacement).",
   "game:version:delete": "Delete a version for a game.",
   "game:image:new": "Upload an image for a game.",
   "game:image:delete": "Delete an image for a game.",

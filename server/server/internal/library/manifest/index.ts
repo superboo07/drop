@@ -162,3 +162,55 @@ export async function createDownloadManifestDetails(
 
   return result;
 }
+
+/**
+ * Finds every version whose cached manifest resolution depends on
+ * `versionId`'s files - i.e. the maximal run of `delta: true` versions
+ * immediately above it in `versionIndex` order, stopping at (and excluding)
+ * the first non-delta version. Mirrors the backward walk this file does
+ * above: a version's chain always stops at the nearest non-delta version at
+ * or below it, so nothing past the next non-delta boundary can resolve
+ * through `versionId`.
+ */
+export async function fetchDeltaDependents(gameId: string, versionId: string) {
+  const versions = await prisma.gameVersion.findMany({
+    where: { gameId },
+    orderBy: { versionIndex: "asc" },
+    select: {
+      versionId: true,
+      versionIndex: true,
+      delta: true,
+      displayName: true,
+      versionPath: true,
+    },
+  });
+  const idx = versions.findIndex((v) => v.versionId === versionId);
+  if (idx === -1) return [];
+
+  const dependents = [];
+  for (let i = idx + 1; i < versions.length; i++) {
+    if (!versions[i].delta) break;
+    dependents.push(versions[i]);
+  }
+  return dependents;
+}
+
+/**
+ * Busts the cached manifest resolution for a version - needed any time its
+ * files or delta-chain topology change, since createDownloadManifestDetails
+ * otherwise keeps serving the stale result indefinitely (there is currently
+ * no other invalidation path anywhere in the codebase).
+ */
+export async function invalidateManifestCache(versionId: string) {
+  const keys = await manifestCache.getKeys();
+  await Promise.all(
+    keys
+      .filter(
+        (k) =>
+          k === versionId ||
+          k.startsWith(`${versionId}-from-`) ||
+          k.endsWith(`-from-${versionId}`),
+      )
+      .map((k) => manifestCache.remove(k)),
+  );
+}

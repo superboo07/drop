@@ -14,15 +14,22 @@
       {{ error }}
     </p>
 
-    <ol v-else class="space-y-2">
+    <ol v-else class="space-y-3">
       <li v-for="(option, index) in launchOptions" :key="index">
         <button
+          :ref="(el: Element | ComponentPublicInstance | null) => setButtonRef(el, index)"
           type="button"
-          class="transition w-full rounded-sm bg-zinc-800 inline-flex items-center text-sm py-2 px-3 gap-x-2 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+          class="transition w-full rounded-md bg-zinc-800 inline-flex items-center text-base py-4 px-4 gap-x-3 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 focus:outline-none"
+          :class="
+            selectedIndex === index
+              ? 'ring-2 ring-blue-600 bg-zinc-700'
+              : 'ring-1 ring-inset ring-zinc-700'
+          "
           :disabled="launching"
           @click="() => choose(index)"
+          @mouseenter="selectedIndex = index"
         >
-          <PlayIcon class="size-4" />
+          <PlayIcon class="size-6 shrink-0" />
           <span>{{ option.name }}</span>
         </button>
       </li>
@@ -30,9 +37,9 @@
 
     <button
       type="button"
-      class="mt-4 inline-flex w-full justify-center rounded-md bg-zinc-800 px-3 py-2 text-sm font-semibold text-zinc-100 shadow-sm ring-1 ring-inset ring-zinc-700 hover:bg-zinc-900"
+      class="mt-4 inline-flex w-full justify-center rounded-md bg-zinc-800 px-4 py-3 text-base font-semibold text-zinc-100 shadow-sm ring-1 ring-inset ring-zinc-700 hover:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
       :disabled="launching"
-      @click="() => getCurrentWindow().close()"
+      @click="() => cancel()"
     >
       Cancel
     </button>
@@ -42,6 +49,7 @@
 <script setup lang="ts">
 import { PlayIcon } from "@heroicons/vue/20/solid";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { ComponentPublicInstance } from "vue";
 
 definePageMeta({
   layout: "mini",
@@ -53,6 +61,49 @@ const gameId = String(route.query.id ?? "");
 const launchOptions = ref<Array<{ name: string }>>([]);
 const error = ref<string | undefined>();
 const launching = ref(false);
+const selectedIndex = ref(0);
+const buttonRefs = ref<HTMLButtonElement[]>([]);
+
+function setButtonRef(el: Element | ComponentPublicInstance | null, index: number) {
+  if (el instanceof HTMLButtonElement) buttonRefs.value[index] = el;
+}
+
+function moveSelection(delta: -1 | 1) {
+  const count = launchOptions.value.length;
+  if (count === 0) return;
+  selectedIndex.value = (selectedIndex.value + delta + count) % count;
+  buttonRefs.value[selectedIndex.value]?.focus();
+}
+
+function cancel() {
+  getCurrentWindow().close();
+}
+
+function onKeydown(e: KeyboardEvent) {
+  switch (e.key) {
+    case "ArrowUp":
+      moveSelection(-1);
+      break;
+    case "ArrowDown":
+      moveSelection(1);
+      break;
+    case "Enter":
+      choose(selectedIndex.value);
+      break;
+    case "Escape":
+      cancel();
+      break;
+    default:
+      return;
+  }
+  e.preventDefault();
+}
+
+useGamepadNavigation({
+  onMove: moveSelection,
+  onConfirm: () => choose(selectedIndex.value),
+  onCancel: cancel,
+});
 
 async function loadOptions() {
   if (!gameId) {
@@ -66,6 +117,9 @@ async function loadOptions() {
     );
     if (launchOptions.value.length === 0) {
       error.value = "This game has no launch options configured.";
+    } else {
+      await nextTick();
+      buttonRefs.value[0]?.focus();
     }
   } catch (e) {
     error.value = `Couldn't load launch options: ${e}`;
@@ -88,5 +142,11 @@ async function choose(index: number) {
   await getCurrentWindow().close();
 }
 
-onMounted(loadOptions);
+onMounted(() => {
+  loadOptions();
+  window.addEventListener("keydown", onKeydown);
+});
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
 </script>

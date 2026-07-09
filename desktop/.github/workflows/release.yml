@@ -1,0 +1,42 @@
+name: "publish"
+
+on:
+  workflow_dispatch: {}
+  release:
+    types: [published]
+  # This can be used to automatically publish nightlies at UTC nighttime
+#  schedule:
+#    - cron: "0 2 * * *" # run at 2 AM UTC
+
+# Builds the Linux AppImage inside Docker (bash build_appimage.sh / Dockerfile.build)
+# and uploads it to a GitHub release. Builds must not run cargo/tauri directly on the
+# host runner -- see CLAUDE.md.
+
+jobs:
+  build-appimage:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: superboo07/drop-app
+          submodules: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build AppImage
+        run: bash build_appimage.sh
+
+      - name: Get version
+        id: version
+        run: echo "version=$(jq -r .version src-tauri/tauri.conf.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: "Auto-release v${{ steps.version.outputs.version }}"
+          body: "See the assets to download this version and install. This release was created automatically."
+          draft: false
+          prerelease: true
+          files: "*.AppImage"

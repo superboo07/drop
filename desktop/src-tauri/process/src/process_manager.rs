@@ -632,21 +632,33 @@ impl ProcessManager<'_> {
             .current_dir(launch_parameters.1);
         sanitize_external_command(&mut command);
 
-        // AppImages normally self-mount via FUSE; on a host without a usable
-        // FUSE (no /dev/fuse, or no fusermount helper - common since several
-        // distros no longer install fuse2 by default) they just fail to
-        // launch unless told to extract themselves and run from disk
-        // instead. Detect that case here so games packaged as AppImages
-        // work out of the box, without the user having to add a custom
-        // launch option per game.
         #[cfg(target_os = "linux")]
-        if is_appimage(&game_executable_path) && !fuse_available() {
-            info!(
-                "{}: launching {} as an AppImage without usable FUSE, forcing extract-and-run",
-                meta.id,
-                game_executable_path.display()
-            );
-            command.env("APPIMAGE_EXTRACT_AND_RUN", "1");
+        {
+            // Every Linux game runs inside umu-run's Steam Runtime
+            // (pressure-vessel) container, which needs an explicit path to
+            // a fusermount helper for its own FUSE use - unlike a normal
+            // FUSE client, it won't search PATH for what's effectively a
+            // setuid-root mount helper, so it fails outright with
+            // "$FUSERMOUNT_PROG not set" if the caller doesn't provide one,
+            // even on hosts where FUSE is otherwise working fine.
+            if let Some(fusermount) = find_fusermount() {
+                command.env("FUSERMOUNT_PROG", fusermount);
+            }
+
+            // Separately: if the game itself is an AppImage, it'll also try
+            // to FUSE-mount itself once running inside that same
+            // container - FUSE isn't reliably usable in there even when
+            // the host has it, so always have it extract and run from disk
+            // instead of trying to mount, rather than requiring the user
+            // to add a custom launch option per game.
+            if is_appimage(&game_executable_path) {
+                info!(
+                    "{}: launching {} as an AppImage, forcing extract-and-run",
+                    meta.id,
+                    game_executable_path.display()
+                );
+                command.env("APPIMAGE_EXTRACT_AND_RUN", "1");
+            }
         }
 
         process_handler.modify_command(&mut command);
@@ -817,18 +829,17 @@ fn is_appimage(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("appimage"))
 }
 
-// Whether this host can actually mount an AppImage: the kernel module's
-// device node needs to exist, and the setuid fusermount helper that
-// actually performs the mount needs to be on PATH.
+// Resolves the fusermount helper's absolute path by searching PATH
+// ourselves, since pressure-vessel wants it handed an explicit path via
+// $FUSERMOUNT_PROG rather than doing that search itself. Prefers
+// fusermount3 (libfuse3) since that's what modern FUSE tooling expects.
 #[cfg(target_os = "linux")]
-fn fuse_available() -> bool {
-    if !Path::new("/dev/fuse").exists() {
-        return false;
-    }
-
-    std::env::var_os("PATH").is_some_and(|paths| {
+fn find_fusermount() -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    ["fusermount3", "fusermount"].into_iter().find_map(|bin| {
         std::env::split_paths(&paths)
-            .any(|dir| dir.join("fusermount3").is_file() || dir.join("fusermount").is_file())
+            .map(|dir| dir.join(bin))
+            .find(|candidate| candidate.is_file())
     })
 }
 

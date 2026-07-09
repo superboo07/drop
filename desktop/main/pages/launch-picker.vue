@@ -19,15 +19,9 @@
         <button
           :ref="(el: Element | ComponentPublicInstance | null) => setButtonRef(el, index)"
           type="button"
-          class="transition w-full rounded-md bg-zinc-800 inline-flex items-center text-base py-4 px-4 gap-x-3 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 focus:outline-none"
-          :class="
-            selectedIndex === index
-              ? 'ring-2 ring-blue-600 bg-zinc-700'
-              : 'ring-1 ring-inset ring-zinc-700'
-          "
+          class="transition w-full rounded-md bg-zinc-800 inline-flex items-center text-base py-4 px-4 gap-x-3 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 ring-1 ring-inset ring-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-zinc-700"
           :disabled="launching"
           @click="() => choose(index)"
-          @mouseenter="selectedIndex = index"
         >
           <PlayIcon class="size-6 shrink-0" />
           <span>{{ option.name }}</span>
@@ -61,18 +55,22 @@ const gameId = String(route.query.id ?? "");
 const launchOptions = ref<Array<{ name: string }>>([]);
 const error = ref<string | undefined>();
 const launching = ref(false);
-const selectedIndex = ref(0);
 const buttonRefs = ref<HTMLButtonElement[]>([]);
 
 function setButtonRef(el: Element | ComponentPublicInstance | null, index: number) {
   if (el instanceof HTMLButtonElement) buttonRefs.value[index] = el;
 }
 
+// Gamepad input is handled app-wide by useSpatialGamepadNavigation (mounted
+// in app.vue, which this window also loads) -- it moves real DOM focus, so
+// this just needs to move focus the same way for the keyboard.
 function moveSelection(delta: -1 | 1) {
-  const count = launchOptions.value.length;
+  const buttons = buttonRefs.value;
+  const count = buttons.length;
   if (count === 0) return;
-  selectedIndex.value = (selectedIndex.value + delta + count) % count;
-  buttonRefs.value[selectedIndex.value]?.focus();
+  const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + delta + count) % count;
+  buttons[nextIndex]?.focus();
 }
 
 function cancel() {
@@ -88,7 +86,7 @@ function onKeydown(e: KeyboardEvent) {
       moveSelection(1);
       break;
     case "Enter":
-      choose(selectedIndex.value);
+      (document.activeElement as HTMLElement | null)?.click();
       break;
     case "Escape":
       cancel();
@@ -98,12 +96,6 @@ function onKeydown(e: KeyboardEvent) {
   }
   e.preventDefault();
 }
-
-useGamepadNavigation({
-  onMove: moveSelection,
-  onConfirm: () => choose(selectedIndex.value),
-  onCancel: cancel,
-});
 
 async function loadOptions() {
   if (!gameId) {

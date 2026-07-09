@@ -83,3 +83,16 @@ $helvetica: (
   border-radius: 10px;
   border: 3px solid #52525b;
 }
+
+/* ===== Gamepad focus indicator ===== */
+/* Most of the app relies on hover states, which a controller can never
+   trigger. :focus-visible covers keyboard users; body.gamepad-nav (toggled
+   by use-spatial-gamepad-nav.ts whenever a pad drives focus) covers gamepad
+   users too, since programmatic .focus() doesn't reliably trigger
+   :focus-visible on WebKitGTK. */
+:focus-visible,
+body.gamepad-nav :focus {
+  outline: 2px solid #3b82f6 !important;
+  outline-offset: 2px !important;
+  border-radius: 4px;
+}

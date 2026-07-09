@@ -30,6 +30,8 @@ import type { AppState } from "./types.js";
 
 const router = useRouter();
 
+useSpatialGamepadNavigation();
+
 const state = useAppState();
 const startupError = ref<string | undefined>();
 

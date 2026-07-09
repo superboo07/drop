@@ -8,7 +8,9 @@
 # The script builds the builder image (Dockerfile.build) once, then mounts
 # the repo into a container and runs the full Tauri build inside it.
 # Output: the built .AppImage is copied to the repo root, named after the
-# commit it was built from (drop-app-<short-sha>.AppImage) rather than the
+# commit it was built from (Drop Desktop Client_<short-sha>_amd64.AppImage,
+# matching tauri-bundler's own "{productName}_{version}_{arch}" convention
+# but with the commit hash standing in for the version) rather than the
 # tauri-bundler default (which is version-tag based) -- this is the single
 # place that naming scheme is decided, so anything invoking this script
 # (CI or otherwise) doesn't need to duplicate the logic.
@@ -74,7 +76,7 @@ rm -rf squashfs-root
 
 # ── 5. Copy the result out to the repo root, named after the commit ───────────
 SHORT_SHA=$(git rev-parse --short HEAD)
-OUTPUT_NAME="drop-app-${SHORT_SHA}.AppImage"
+OUTPUT_NAME="Drop Desktop Client_${SHORT_SHA}_amd64.AppImage"
 cp "$APPIMAGE" "./$OUTPUT_NAME"
 
 echo ""

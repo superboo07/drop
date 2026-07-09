@@ -22,8 +22,12 @@ jobs:
       - name: Build AppImage
         run: bash build_appimage.sh
 
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drop-app-${{ github.sha }}
+          name: Drop Desktop Client_${{ steps.sha.outputs.short }}_amd64
           path: "*.AppImage"

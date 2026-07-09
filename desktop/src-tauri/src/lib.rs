@@ -329,6 +329,7 @@ pub fn run() {
                     .inner_size(width, height)
                     .decorations(false)
                     .shadow(false)
+                    .visible(false)
                     .build()
                     .expect("failed to build main window");
 
@@ -348,9 +349,29 @@ pub fn run() {
                 // with `drop://launch/<id>` as a plain CLI argument, when
                 // Drop wasn't already running). That initial URL has to be
                 // read separately via `get_current()`.
-                if let Ok(Some(urls)) = app.deep_link().get_current() {
-                    for url in &urls {
-                        handle_deep_link_url(url, &handle);
+                //
+                // The window is built hidden and only shown here for a
+                // normal launch -- if Steam cold-started Drop purely to run
+                // a game via its shortcut, the user just wants the game, not
+                // Drop's own window popping up too.
+                let launched_to_run_a_game = app
+                    .deep_link()
+                    .get_current()
+                    .ok()
+                    .flatten()
+                    .map(|urls| {
+                        let mut is_game_launch = false;
+                        for url in &urls {
+                            is_game_launch |= url.host_str() == Some("launch");
+                            handle_deep_link_url(url, &handle);
+                        }
+                        is_game_launch
+                    })
+                    .unwrap_or(false);
+
+                if !launched_to_run_a_game {
+                    if let Err(e) = main_window.show() {
+                        warn!("failed to show main window: {e}");
                     }
                 }
 

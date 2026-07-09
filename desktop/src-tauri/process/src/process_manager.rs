@@ -475,7 +475,6 @@ impl ProcessManager<'_> {
         // Captured before the launch command gets wrapped in umu-run/Proton
         // (see below) or reconstructed into a shell string, since by then
         // the "command" is the wrapper's path, not the game's.
-        #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
         let (target_launch_string, game_executable_path) = if let Some(emulator) = emulator {
             let err = ProcessError::RequiredDependency(
                 emulator.game_id.clone(),
@@ -581,10 +580,17 @@ impl ProcessManager<'_> {
             .map_err(|e| ProcessError::FormatError(e.to_string()))?
             .to_string();
 
-        let launch_parameters = LaunchParameters(
-            ParsedCommand::parse(target_launch_string)?,
-            install_dir.into(),
-        );
+        // Run from the directory containing the actual binary being
+        // executed (the emulator's, if there is one), not the install
+        // root - games/emulators that resolve their own assets relative to
+        // their own binary rather than an absolute path expect this.
+        let working_dir = game_executable_path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(install_dir));
+
+        let launch_parameters =
+            LaunchParameters(ParsedCommand::parse(target_launch_string)?, working_dir);
 
         let mut launch_parameters = launch_parameters;
         launch_parameters

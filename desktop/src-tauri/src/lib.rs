@@ -666,8 +666,34 @@ fn open_launch_picker_window(handle: &AppHandle, game_id: &str) {
     }
 }
 
+// Guards against two handshake attempts running concurrently - e.g. the
+// browser's automatic `drop://handshake/...` redirect and a manually pasted
+// token both arriving for the same login (the manual-entry fallback is
+// shown a couple seconds into every attempt regardless of whether the
+// automatic redirect is about to land). Submitting the same client/token
+// pair to the server twice at once races its finalization step and comes
+// back as an opaque 500, which surfaced client-side as a generic
+// "invalid response" authentication failure.
+static HANDSHAKE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+struct HandshakeGuard;
+impl Drop for HandshakeGuard {
+    fn drop(&mut self) {
+        HANDSHAKE_IN_PROGRESS.store(false, Ordering::SeqCst);
+    }
+}
+
 // TODO: Refactor
 pub async fn recieve_handshake(app: AppHandle, path: String) {
+    if HANDSHAKE_IN_PROGRESS
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        warn!("ignoring handshake request - one is already in progress");
+        return;
+    }
+    let _guard = HandshakeGuard;
+
     // Tell the app we're processing
     app_emit!(&app, "auth/processing", ());
 

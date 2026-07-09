@@ -1,8 +1,4 @@
 #![deny(unused_must_use)]
-#![feature(fn_traits)]
-#![feature(duration_constructors)]
-#![feature(duration_millis_float)]
-#![feature(iterator_try_collect)]
 #![feature(nonpoison_mutex)]
 #![feature(sync_nonpoison)]
 #![deny(clippy::all)]
@@ -370,10 +366,10 @@ pub fn run() {
                     })
                     .unwrap_or(false);
 
-                if !launched_to_run_a_game {
-                    if let Err(e) = main_window.show() {
-                        warn!("failed to show main window: {e}");
-                    }
+                if !launched_to_run_a_game
+                    && let Err(e) = main_window.show()
+                {
+                    warn!("failed to show main window: {e}");
                 }
 
                 app.deep_link().on_open_url(move |event| {

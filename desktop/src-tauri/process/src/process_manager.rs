@@ -202,7 +202,7 @@ impl ProcessManager<'_> {
             return Ok(());
         }
 
-        debug!("process for {:?} exited with {:?}", &game_id, result);
+        debug!("process for {:?} exited with {:?}", game_id, result);
 
         let process = match self.processes.remove(&game_id) {
             Some(process) => process,
@@ -218,7 +218,7 @@ impl ProcessManager<'_> {
             .installed_game_version
             .get(&game_id)
             .cloned()
-            .unwrap_or_else(|| panic!("Could not get installed version of {}", &game_id));
+            .unwrap_or_else(|| panic!("Could not get installed version of {}", game_id));
         db_handle.applications.transient_statuses.remove(&meta);
 
         let current_state = db_handle.applications.game_statuses.get_mut(&game_id);
@@ -393,7 +393,7 @@ impl ProcessManager<'_> {
 
         debug!(
             "Launching process {:?} with version {:?}",
-            &game_id,
+            game_id,
             db_lock.applications.game_versions.get(version_name)
         );
 
@@ -414,7 +414,7 @@ impl ProcessManager<'_> {
             .create(true)
             .open(game_log_folder.join(format!(
                 "{}-{}.log",
-                &meta.version,
+                meta.version,
                 current_time.timestamp()
             )))?;
 
@@ -425,7 +425,7 @@ impl ProcessManager<'_> {
             .create(true)
             .open(game_log_folder.join(format!(
                 "{}-{}-error.log",
-                &meta.version,
+                meta.version,
                 current_time.timestamp()
             )))?;
 

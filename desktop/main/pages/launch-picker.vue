@@ -19,7 +19,7 @@
         <button
           :ref="(el: Element | ComponentPublicInstance | null) => setButtonRef(el, index)"
           type="button"
-          class="transition w-full rounded-md bg-zinc-800 inline-flex items-center text-base py-4 px-4 gap-x-3 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 ring-1 ring-inset ring-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-zinc-700"
+          class="transition w-full rounded-md bg-zinc-800 inline-flex items-center text-base py-4 px-4 gap-x-3 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 ring-1 ring-inset ring-zinc-700 focus:bg-zinc-700"
           :disabled="launching"
           @click="() => choose(index)"
         >
@@ -31,7 +31,7 @@
 
     <button
       type="button"
-      class="mt-4 inline-flex w-full justify-center rounded-md bg-zinc-800 px-4 py-3 text-base font-semibold text-zinc-100 shadow-sm ring-1 ring-inset ring-zinc-700 hover:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+      class="mt-4 inline-flex w-full justify-center rounded-md bg-zinc-800 px-4 py-3 text-base font-semibold text-zinc-100 shadow-sm ring-1 ring-inset ring-zinc-700 hover:bg-zinc-900"
       :disabled="launching"
       @click="() => cancel()"
     >

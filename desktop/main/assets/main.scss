@@ -89,9 +89,15 @@ $helvetica: (
    trigger. :focus-visible covers keyboard users; body.gamepad-nav (toggled
    by use-spatial-gamepad-nav.ts whenever a pad drives focus) covers gamepad
    users too, since programmatic .focus() doesn't reliably trigger
-   :focus-visible on WebKitGTK. */
-:focus-visible,
-body.gamepad-nav :focus {
+   :focus-visible on WebKitGTK.
+
+   Excludes anything with its own focus:ring-* utility (outline and a
+   box-shadow ring are different properties, so they don't override each
+   other - without this they'd both render at once as two stacked boxes) so
+   this is only a fallback for elements that don't already indicate focus
+   themselves. */
+:focus-visible:not([class*="focus:ring"]),
+body.gamepad-nav :focus:not([class*="focus:ring"]) {
   outline: 2px solid #3b82f6 !important;
   outline-offset: 2px !important;
   border-radius: 4px;

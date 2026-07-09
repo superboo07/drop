@@ -97,6 +97,15 @@ export async function initialNavigation(state: ReturnType<typeof useAppState>) {
     });
   const router = useRouter();
 
+  // The launch picker (main/pages/launch-picker.vue) runs in its own
+  // window, opened directly at this route by the Rust deep-link handler
+  // (handle_deep_link_url in src-tauri/src/lib.rs) -- every window runs
+  // the same app bootstrap, so without this it'd get redirected to
+  // /library (or wherever) before the user can pick anything.
+  if (router.currentRoute.value.path === "/launch-picker") {
+    return;
+  }
+
   let target: string | { path: string };
   switch (state.value.status) {
     case AppStatus.NotConfigured:

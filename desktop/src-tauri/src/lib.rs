@@ -41,6 +41,7 @@ use ::remote::{
 };
 use database::{
     DB, GameDownloadStatus, borrow_db_checked, borrow_db_mut_checked, db::DATA_ROOT_DIR,
+    models::data::InstalledGameType,
 };
 use log::{LevelFilter, debug, info, warn};
 use log4rs::{
@@ -560,18 +561,84 @@ fn handle_deep_link_url(url: &Url, handle: &AppHandle) {
     } else if let Some("launch") = url.host_str() {
         // Used by the "Add to Steam" non-Steam shortcut:
         // Steam launches Drop with this as an argument (handed off to us
-        // here as a deep link), starting the game's first launch option.
+        // here as a deep link). If the game only has one configured launch
+        // option (or needs first-time setup, which ignores the index
+        // entirely -- see ProcessManager::launch_process), start it
+        // directly; otherwise open a small picker window so the user gets
+        // the same choice they'd have launching from Drop's own UI.
         let game_id = url.path().trim_start_matches('/').to_string();
         if game_id.is_empty() {
             warn!("drop://launch/ deep link missing a game id");
+            return;
+        }
+
+        info!("launching game {game_id} via deep link");
+
+        let needs_setup = {
+            let db_lock = borrow_db_checked();
+            !matches!(
+                db_lock.applications.game_statuses.get(&game_id),
+                Some(GameDownloadStatus::Installed {
+                    install_type: InstalledGameType::Installed,
+                    ..
+                })
+            )
+        };
+
+        let launch_options = if needs_setup {
+            Vec::new()
         } else {
-            info!("launching game {game_id} via deep link");
-            if let Err(e) = ::process::PROCESS_MANAGER.lock().launch_process(game_id, 0) {
-                warn!("Failed to launch game via deep link: {e}");
-            }
+            ::process::process_manager::ProcessManager::get_launch_options(game_id.clone())
+                .unwrap_or_default()
+        };
+
+        if launch_options.len() > 1 {
+            open_launch_picker_window(handle, &game_id);
+        } else if let Err(e) = ::process::PROCESS_MANAGER.lock().launch_process(game_id, 0) {
+            warn!("Failed to launch game via deep link: {e}");
         }
     } else {
         warn!("unhandled drop:// url: {url}");
+    }
+}
+
+fn open_launch_picker_window(handle: &AppHandle, game_id: &str) {
+    if let Some(window) = handle.get_window("launch-picker") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let width = 420.0;
+    let height = 480.0;
+
+    let window = match WindowBuilder::new(handle, "launch-picker")
+        .title("Choose how to launch")
+        .inner_size(width, height)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .shadow(false)
+        .center()
+        .build()
+    {
+        Ok(window) => window,
+        Err(e) => {
+            warn!("failed to build launch picker window: {e}");
+            return;
+        }
+    };
+
+    let encoded_id = urlencoding::encode(game_id);
+    let webview_url = WebviewUrl::App(format!("main/launch-picker?id={encoded_id}").into());
+
+    if let Err(e) = window.add_child(
+        WebviewBuilder::new("launch-picker", webview_url).auto_resize(),
+        LogicalPosition::new(0., 0.),
+        LogicalSize::new(width, height),
+    ) {
+        warn!("failed to create launch picker webview: {e}");
     }
 }
 

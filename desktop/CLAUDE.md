@@ -28,6 +28,8 @@ Rust toolchain is pinned to **nightly** (`src-tauri/rust-toolchain.toml`) — se
 
 **Builds (not lint/typecheck) must run inside a Dockerfile, not on the host.** Use `bash build_appimage.sh` (`Dockerfile.build`) for actual build artifacts rather than installing/running the Rust or Node toolchains directly on the host. This applies to Drop's other repo (the server) too. Lightweight verification of an edit — `cargo check`, `cargo clippy`, `pnpm -C main typecheck` — is fine to run on the host if the toolchain is already there.
 
+**Never run `nuxt dev`/`pnpm -C main dev` on the host to eyeball a page.** It writes into `main/.nuxt` and can leave `main/.output/public` with dev-mode HTML (`@vite/client` script tags, absolute host `node_modules` paths instead of hashed prod assets) — this happened once (leftover dev server from a verification step corrupted the AppImage's main window, which then failed to load with `AssetNotFound` errors). `build.mjs` copies `main/.output/public` straight into the AppImage/bundle with no sanity check, so this silently ships. If you must run a dev server for verification, kill it and confirm with `ps aux | grep nuxt` (or equivalent) that it's actually gone — don't trust a bare `pkill` exit code — then `rm -rf main/.nuxt main/.output .output` before the next real build.
+
 ### AppImage builds (Linux)
 
 `bash build_appimage.sh` builds a Docker image from `Dockerfile.build` and runs the whole build inside a container (no host Rust/Node install needed). See "AppImage gotchas" below before touching anything that spawns subprocesses or affects the Linux bundle target.

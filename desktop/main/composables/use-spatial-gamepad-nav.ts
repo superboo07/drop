@@ -137,6 +137,19 @@ function confirm() {
   active.click();
 }
 
+// Vue Router's web history stamps history.state.position on every
+// navigation (starting from whatever window.history.length already was when
+// the router was created). Captured once, synchronously, before app.vue's
+// initial navigation runs, so cancel() can tell "the app's first page" apart
+// from "a page we actually navigated to" -- router.back() from the former
+// walks past the SPA's own history into a blank pre-render state with
+// nothing mounted, softlocking the user on a white screen.
+let baselineHistoryPosition = 0;
+if (typeof window !== "undefined") {
+  baselineHistoryPosition = (window.history.state as { position?: number } | null)
+    ?.position ?? 0;
+}
+
 function cancel() {
   const root = getNavRoot();
   if (root !== document) {
@@ -152,6 +165,13 @@ function cancel() {
     // A standalone popup window, not part of the main app's navigation
     // history -- B closes it, matching what Escape already does there.
     getCurrentWindow().close();
+    return;
+  }
+
+  const currentPosition =
+    (window.history.state as { position?: number } | null)?.position ?? 0;
+  if (currentPosition <= baselineHistoryPosition) {
+    // Already on the app's first page -- nothing to go back to.
     return;
   }
   router.back();

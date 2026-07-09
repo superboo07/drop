@@ -152,8 +152,16 @@ export class ClientHandler {
 
   async finialiseClient(id: string) {
     const metadata = this.temporaryClientTable.get(id);
-    if (!metadata) throw new Error("Invalid client ID");
-    if (!metadata.userId) throw new Error("Un-authorized client ID");
+    if (!metadata)
+      throw createError({
+        statusCode: 409,
+        statusMessage: "Invalid, already-used, or expired client ID",
+      });
+    if (!metadata.userId)
+      throw createError({
+        statusCode: 400,
+        statusMessage: "Un-authorized client ID",
+      });
 
     const client = await prisma.client.create({
       data: {

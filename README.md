@@ -3,6 +3,10 @@
 </div>
 <br/>
 
+# NOTE
+
+This release has changes that are mostly vibecoded, it is not a replacement for the original project and may have issues the original does not have. Anytime you have an issue while using this project please open the issue report *here*.
+
 # Drop
 
 [![Website](https://img.shields.io/badge/website-000000?style=for-the-badge&logo=About.me&logoColor=white)](https://droposs.org)
@@ -35,3 +39,4 @@ See our documentation on how to [deploy Drop](https://droposs.org/docs/admin/qui
 Please see the [in-depth contributing guide](https://developer.droposs.org/contributing). The guide includes information on how to set up the project, how to contribute code, how to report issues, and even how to effectively translate Drop.
 
 [![Drop Translation Progress](https://translate.droposs.org/widget/drop/horizontal-auto.svg)](https://translate.droposs.org/engage/drop/)
+

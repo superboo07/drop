@@ -607,6 +607,14 @@ impl ProcessManager<'_> {
             .stderr(error_file)
             .stdout(log_file)
             .env_remove("RUST_LOG")
+            // When Drop itself was launched by Steam (e.g. a non-Steam game
+            // shortcut created via "Add to Steam"), it inherits
+            // ENABLE_GAMESCOPE_WSI=1 from Steam's own environment. That
+            // routes the game's Vulkan presentation through gamescope's
+            // nested WSI layer, which has nowhere to composite to outside
+            // an actual gamescope session (e.g. Desktop Mode) -- the game
+            // renders frames successfully but its window is never visible.
+            .env_remove("ENABLE_GAMESCOPE_WSI")
             .current_dir(launch_parameters.1);
         sanitize_external_command(&mut command);
 

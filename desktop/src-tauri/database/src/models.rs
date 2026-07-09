@@ -171,7 +171,9 @@ pub mod data {
             pub max_download_threads: usize,
             pub force_offline: bool,
             #[serde(default)]
-            pub quit_on_close: bool, // ... other settings ...
+            pub quit_on_close: bool,
+            #[serde(default)]
+            pub windowed_launch_picker: bool, // ... other settings ...
         }
         impl Default for Settings {
             fn default() -> Self {
@@ -180,6 +182,7 @@ pub mod data {
                     max_download_threads: 4,
                     force_offline: false,
                     quit_on_close: false,
+                    windowed_launch_picker: false,
                 }
             }
         }

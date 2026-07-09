@@ -125,4 +125,5 @@ export type Settings = {
   maxDownloadThreads: number;
   forceOffline: boolean;
   quitOnClose: boolean;
+  windowedLaunchPicker: boolean;
 };

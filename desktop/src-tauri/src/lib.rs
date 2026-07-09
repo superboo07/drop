@@ -609,24 +609,48 @@ fn open_launch_picker_window(handle: &AppHandle, game_id: &str) {
         return;
     }
 
+    let windowed = borrow_db_checked().settings.windowed_launch_picker;
+
     let width = 420.0;
     let height = 480.0;
 
-    let window = match WindowBuilder::new(handle, "launch-picker")
+    let mut builder = WindowBuilder::new(handle, "launch-picker")
         .title("Choose how to launch")
-        .inner_size(width, height)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
         .decorations(false)
-        .shadow(false)
-        .center()
-        .build()
-    {
+        .shadow(false);
+
+    builder = if windowed {
+        builder
+            .inner_size(width, height)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .center()
+    } else {
+        builder.fullscreen(true)
+    };
+
+    let window = match builder.build() {
         Ok(window) => window,
         Err(e) => {
             warn!("failed to build launch picker window: {e}");
             return;
+        }
+    };
+
+    // Fullscreen windows don't resolve to `width`/`height` above, so read
+    // back whatever size was actually applied (monitor resolution) for the
+    // child webview's initial size -- `auto_resize` keeps it in sync with
+    // any resizes after that.
+    let (child_width, child_height) = if windowed {
+        (width, height)
+    } else {
+        match window.inner_size() {
+            Ok(size) => {
+                let scale = window.scale_factor().unwrap_or(1.0);
+                (size.width as f64 / scale, size.height as f64 / scale)
+            }
+            Err(_) => (width, height),
         }
     };
 
@@ -636,7 +660,7 @@ fn open_launch_picker_window(handle: &AppHandle, game_id: &str) {
     if let Err(e) = window.add_child(
         WebviewBuilder::new("launch-picker", webview_url).auto_resize(),
         LogicalPosition::new(0., 0.),
-        LogicalSize::new(width, height),
+        LogicalSize::new(child_width, child_height),
     ) {
         warn!("failed to create launch picker webview: {e}");
     }

@@ -541,7 +541,8 @@ impl ProcessManager<'_> {
                 game_executable_path,
             )
         } else {
-            let game_executable_path = PathBuf::from(install_dir).join(&target_command.command);
+            target_command.make_absolute(PathBuf::from(install_dir.clone()));
+            let game_executable_path = PathBuf::from(&target_command.command);
 
             (
                 process_handler.create_launch_process(

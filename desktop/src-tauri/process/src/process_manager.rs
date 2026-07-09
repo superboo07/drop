@@ -472,7 +472,11 @@ impl ProcessManager<'_> {
 
         let mut target_command = ParsedCommand::parse(target_command)?;
 
-        let target_launch_string = if let Some(emulator) = emulator {
+        // Captured before the launch command gets wrapped in umu-run/Proton
+        // (see below) or reconstructed into a shell string, since by then
+        // the "command" is the wrapper's path, not the game's.
+        #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+        let (target_launch_string, game_executable_path) = if let Some(emulator) = emulator {
             let err = ProcessError::RequiredDependency(
                 emulator.game_id.clone(),
                 emulator.version_id.clone(),
@@ -525,21 +529,31 @@ impl ProcessManager<'_> {
                 *v = v.replace("{rom}", &target_command.command);
             });
 
-            process_handler.create_launch_process(
-                emulator_metadata,
-                exe_command.reconstruct(),
-                emulator_game_version,
-                install_dir,
-                &db_lock,
-            )?
+            let game_executable_path = PathBuf::from(&exe_command.command);
+
+            (
+                process_handler.create_launch_process(
+                    emulator_metadata,
+                    exe_command.reconstruct(),
+                    emulator_game_version,
+                    install_dir,
+                    &db_lock,
+                )?,
+                game_executable_path,
+            )
         } else {
-            process_handler.create_launch_process(
-                &meta,
-                target_command.reconstruct(),
-                game_version,
-                install_dir,
-                &db_lock,
-            )?
+            let game_executable_path = PathBuf::from(install_dir).join(&target_command.command);
+
+            (
+                process_handler.create_launch_process(
+                    &meta,
+                    target_command.reconstruct(),
+                    game_version,
+                    install_dir,
+                    &db_lock,
+                )?,
+                game_executable_path,
+            )
         };
 
         let mut parsed_launch = ParsedCommand::parse(target_launch_string.clone())?;
@@ -585,8 +599,6 @@ impl ProcessManager<'_> {
             launch_parameters.0
         );
 
-        let executable_path = PathBuf::from(&launch_parameters.0.command);
-
         let mut command = {
             let mut command = Command::new(launch_parameters.0.command);
             command.args(launch_parameters.0.args);
@@ -628,11 +640,11 @@ impl ProcessManager<'_> {
         // work out of the box, without the user having to add a custom
         // launch option per game.
         #[cfg(target_os = "linux")]
-        if is_appimage(&executable_path) && !fuse_available() {
+        if is_appimage(&game_executable_path) && !fuse_available() {
             info!(
                 "{}: launching {} as an AppImage without usable FUSE, forcing extract-and-run",
                 meta.id,
-                executable_path.display()
+                game_executable_path.display()
             );
             command.env("APPIMAGE_EXTRACT_AND_RUN", "1");
         }

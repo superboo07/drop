@@ -3,8 +3,10 @@ name: "build appimage"
 on: push
 
 # Builds the Linux AppImage inside Docker (bash build_appimage.sh / Dockerfile.build)
-# on every commit and uploads it as a workflow artifact named after the commit,
-# so any push has a downloadable, testable AppImage without cutting a release.
+# on every commit and uploads it as a workflow artifact, so any push has a
+# downloadable, testable AppImage without cutting a release. build_appimage.sh
+# names the output after the commit it was built from -- that's the single
+# place the naming scheme lives, so it isn't duplicated here.
 # See release.yml for the version-tagged release build.
 
 jobs:
@@ -20,17 +22,8 @@ jobs:
       - name: Build AppImage
         run: bash build_appimage.sh
 
-      - name: Rename AppImage to commit id
-        id: rename
-        run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          APPIMAGE=$(ls *.AppImage)
-          NEW_NAME="drop-app-${SHORT_SHA}.AppImage"
-          mv "$APPIMAGE" "$NEW_NAME"
-          echo "name=$NEW_NAME" >> "$GITHUB_OUTPUT"
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.rename.outputs.name }}
-          path: ${{ steps.rename.outputs.name }}
+          name: drop-app-${{ github.sha }}
+          path: "*.AppImage"

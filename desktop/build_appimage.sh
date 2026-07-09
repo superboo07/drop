@@ -7,7 +7,11 @@
 # No extra tools needed on the host beyond Docker.
 # The script builds the builder image (Dockerfile.build) once, then mounts
 # the repo into a container and runs the full Tauri build inside it.
-# Output: the built .AppImage is copied to the repo root.
+# Output: the built .AppImage is copied to the repo root, named after the
+# commit it was built from (drop-app-<short-sha>.AppImage) rather than the
+# tauri-bundler default (which is version-tag based) -- this is the single
+# place that naming scheme is decided, so anything invoking this script
+# (CI or otherwise) doesn't need to duplicate the logic.
 
 set -euo pipefail
 
@@ -68,8 +72,10 @@ rm -f "$APPIMAGE"
 ARCH=x86_64 appimagetool squashfs-root "$APPIMAGE"
 rm -rf squashfs-root
 
-# ── 5. Copy the result out to the repo root ───────────────────────────────────
-cp "$APPIMAGE" ./
+# ── 5. Copy the result out to the repo root, named after the commit ───────────
+SHORT_SHA=$(git rev-parse --short HEAD)
+OUTPUT_NAME="drop-app-${SHORT_SHA}.AppImage"
+cp "$APPIMAGE" "./$OUTPUT_NAME"
 
 echo ""
-echo "Done: $(basename "$APPIMAGE")"
+echo "Done: $OUTPUT_NAME"

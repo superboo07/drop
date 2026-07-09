@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::fs::{Permissions, set_permissions};
-use std::io::SeekFrom;
+use std::io::{self, SeekFrom};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use aes::cipher::{KeyIvInit, StreamCipher};
 use download_manager::error::ApplicationDownloadError;
@@ -25,6 +25,16 @@ use tokio::io::{AsyncReadExt as _, AsyncSeekExt as _, AsyncWriteExt as _};
 use tokio_util::io::StreamReader;
 
 const READ_BUF_LEN: usize = 1024 * 1024;
+
+// Chunk bodies can legitimately take far longer than the client's default
+// request timeout to fully stream (reqwest's timeout covers body download,
+// not just headers) - especially large chunks on slower connections. Rather
+// than bound the whole transfer, bound how long we'll wait for *any*
+// progress: a read stall this long means the connection is actually dead.
+const CHUNK_READ_IDLE_TIMEOUT: Duration = Duration::from_secs(25);
+// Outer safety net against a pathologically slow-but-technically-alive
+// connection, so a single chunk can't hang a download forever.
+const CHUNK_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 type Aes128Ctr64LE = ctr::Ctr64LE<aes::Aes128>;
 
@@ -63,6 +73,7 @@ pub async fn download_game_chunk(
     let response = DROP_CLIENT_ASYNC
         .get(url)
         .header("Authorization", header)
+        .timeout(CHUNK_DOWNLOAD_TIMEOUT)
         .send()
         .await
         .map_err(|e| ApplicationDownloadError::Communication(e.into()))?;
@@ -127,7 +138,14 @@ pub async fn download_game_chunk(
 
         let mut remaining = file.length;
         while remaining > 0 {
-            let amount = stream_reader.read(&mut read_buf[0..remaining.min(READ_BUF_LEN)]).await?;
+            let amount = tokio::time::timeout(
+                CHUNK_READ_IDLE_TIMEOUT,
+                stream_reader.read(&mut read_buf[0..remaining.min(READ_BUF_LEN)]),
+            )
+            .await
+            .map_err(|_| {
+                io::Error::new(io::ErrorKind::TimedOut, "stalled while downloading chunk")
+            })??;
             download_progress.add(amount);
             remaining -= amount;
 

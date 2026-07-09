@@ -1,8 +1,8 @@
 use std::{
     collections::HashMap,
     fs::{OpenOptions, create_dir_all},
-    io,
-    path::PathBuf,
+    io::{self, Read},
+    path::{Path, PathBuf},
     process::{Command, ExitStatus},
     sync::Arc,
     thread::spawn,
@@ -585,6 +585,8 @@ impl ProcessManager<'_> {
             launch_parameters.0
         );
 
+        let executable_path = PathBuf::from(&launch_parameters.0.command);
+
         let mut command = {
             let mut command = Command::new(launch_parameters.0.command);
             command.args(launch_parameters.0.args);
@@ -617,6 +619,23 @@ impl ProcessManager<'_> {
             .env_remove("ENABLE_GAMESCOPE_WSI")
             .current_dir(launch_parameters.1);
         sanitize_external_command(&mut command);
+
+        // AppImages normally self-mount via FUSE; on a host without a usable
+        // FUSE (no /dev/fuse, or no fusermount helper - common since several
+        // distros no longer install fuse2 by default) they just fail to
+        // launch unless told to extract themselves and run from disk
+        // instead. Detect that case here so games packaged as AppImages
+        // work out of the box, without the user having to add a custom
+        // launch option per game.
+        #[cfg(target_os = "linux")]
+        if is_appimage(&executable_path) && !fuse_available() {
+            info!(
+                "{}: launching {} as an AppImage without usable FUSE, forcing extract-and-run",
+                meta.id,
+                executable_path.display()
+            );
+            command.env("APPIMAGE_EXTRACT_AND_RUN", "1");
+        }
 
         process_handler.modify_command(&mut command);
 
@@ -764,6 +783,41 @@ fn pid_alive(pid: i32) -> bool {
 #[cfg(all(unix, not(target_os = "linux")))]
 fn pid_alive(pid: i32) -> bool {
     unsafe { libc::kill(pid, 0) == 0 }
+}
+
+// AppImages carry a 3-byte magic ('A', 'I', <type>) right after the
+// standard ELF header. Check that first since it's authoritative, and fall
+// back to the file extension for anything we fail to read (e.g. permissions).
+#[cfg(target_os = "linux")]
+fn is_appimage(path: &Path) -> bool {
+    if let Ok(mut file) = std::fs::File::open(path) {
+        let mut header = [0u8; 11];
+        if file.read_exact(&mut header).is_ok() {
+            return header[0..4] == [0x7f, b'E', b'L', b'F']
+                && header[8] == b'A'
+                && header[9] == b'I'
+                && matches!(header[10], 1 | 2);
+        }
+    }
+
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("appimage"))
+}
+
+// Whether this host can actually mount an AppImage: the kernel module's
+// device node needs to exist, and the setuid fusermount helper that
+// actually performs the mount needs to be on PATH.
+#[cfg(target_os = "linux")]
+fn fuse_available() -> bool {
+    if !Path::new("/dev/fuse").exists() {
+        return false;
+    }
+
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths)
+            .any(|dir| dir.join("fusermount3").is_file() || dir.join("fusermount").is_file())
+    })
 }
 
 pub trait ProcessHandler: Send + 'static {

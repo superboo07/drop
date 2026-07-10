@@ -228,6 +228,7 @@ pub fn run() {
             fetch_state,
             quit,
             fetch_system_data,
+            is_gamescope,
             open_fs,
             log_frontend,
             // User utils
@@ -320,22 +321,47 @@ pub fn run() {
                 let width = 1536.0;
                 let height = 864.0;
 
-                let main_window = WindowBuilder::new(&handle, "main")
+                let start_fullscreen = borrow_db_checked().settings.start_fullscreen;
+
+                let mut main_window_builder = WindowBuilder::new(&handle, "main")
                     .title("Drop Desktop App")
                     .min_inner_size(1000.0, 500.0)
-                    .inner_size(width, height)
                     .decorations(false)
                     .shadow(false)
-                    .visible(false)
+                    .visible(false);
+
+                main_window_builder = if start_fullscreen {
+                    main_window_builder.fullscreen(true)
+                } else {
+                    main_window_builder.inner_size(width, height)
+                };
+
+                let main_window = main_window_builder
                     .build()
                     .expect("failed to build main window");
+
+                // Fullscreen windows don't resolve to `width`/`height` above, so read
+                // back whatever size was actually applied (monitor resolution) for the
+                // child webview's initial size -- `auto_resize` keeps it in sync with
+                // any resizes after that.
+                let (child_width, child_height) = if start_fullscreen {
+                    match main_window.inner_size() {
+                        Ok(size) => {
+                            let scale = main_window.scale_factor().unwrap_or(1.0);
+                            (size.width as f64 / scale, size.height as f64 / scale)
+                        }
+                        Err(_) => (width, height),
+                    }
+                } else {
+                    (width, height)
+                };
 
                 main_window
                     .add_child(
                         WebviewBuilder::new("frontend", WebviewUrl::App("main".into()))
                             .auto_resize(),
                         LogicalPosition::new(0., 0.),
-                        LogicalSize::new(width, height),
+                        LogicalSize::new(child_width, child_height),
                     )
                     .expect("failed to create frontend webview");
 
@@ -605,10 +631,23 @@ fn open_launch_picker_window(handle: &AppHandle, game_id: &str) {
         return;
     }
 
-    let windowed = borrow_db_checked().settings.windowed_launch_picker;
+    let (windowed, ui_scale) = {
+        let db = borrow_db_checked();
+        (db.settings.windowed_launch_picker, db.settings.ui_scale)
+    };
 
-    let width = 420.0;
-    let height = 480.0;
+    // Mirrors the dampened scale applied in app.vue's applyUiScale (only half
+    // of any increase above 100% carries over to the picker's own content) -
+    // sizing the window off the full, undampened ui_scale here would leave it
+    // bigger than what's actually rendered inside it.
+    let dampened_ui_scale = 1.0 + (ui_scale - 1.0) * 0.5;
+
+    // The windowed picker is a fixed, non-resizable window (unlike the main
+    // window, which the user can just resize if its rem-scaled content grows).
+    // Without this, turning up the UI Scale setting makes the content outgrow
+    // this window instead of the window growing to match.
+    let width = 420.0 * dampened_ui_scale;
+    let height = 480.0 * dampened_ui_scale;
 
     let mut builder = WindowBuilder::new(handle, "launch-picker")
         .title("Choose how to launch")

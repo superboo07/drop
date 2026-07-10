@@ -56,34 +56,6 @@
         />
       </Switch>
     </div>
-
-    <div class="flex flex-row items-center justify-between">
-      <div>
-        <h3 class="text-sm font-medium leading-6 text-zinc-100">
-          Windowed launch picker
-        </h3>
-        <p class="mt-1 text-sm leading-6 text-zinc-400">
-          The window for choosing a launch option (shown for games with
-          multiple ways to start, e.g. from a Steam shortcut) opens
-          fullscreen by default. Enable this to open it as a small window
-          instead.
-        </p>
-      </div>
-      <Switch
-        v-model="windowedLaunchPicker"
-        :class="[
-          windowedLaunchPicker ? 'bg-blue-600' : 'bg-zinc-700',
-          'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out',
-        ]"
-      >
-        <span
-          :class="[
-            windowedLaunchPicker ? 'translate-x-5' : 'translate-x-0',
-            'pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-          ]"
-        />
-      </Switch>
-    </div>
   </div>
 </template>
 
@@ -95,7 +67,6 @@ defineProps<{}>();
 
 const autostartEnabled = ref<boolean>(false);
 const quitOnClose = ref<boolean>(false);
-const windowedLaunchPicker = ref<boolean>(false);
 
 // Load initial state
 invokeWithTimeout("get_autostart_enabled").then((enabled) => {
@@ -104,7 +75,6 @@ invokeWithTimeout("get_autostart_enabled").then((enabled) => {
 
 invokeWithTimeout<Settings>("fetch_settings").then((settings) => {
   quitOnClose.value = settings.quitOnClose;
-  windowedLaunchPicker.value = settings.windowedLaunchPicker;
 });
 
 // Watch for changes and update autostart
@@ -126,17 +96,6 @@ watch(quitOnClose, async (newValue: boolean) => {
   } catch (error) {
     console.error("Failed to update quit-on-close setting:", error);
     quitOnClose.value = !newValue;
-  }
-});
-
-watch(windowedLaunchPicker, async (newValue: boolean) => {
-  try {
-    await invokeWithTimeout("update_settings", {
-      newSettings: { windowedLaunchPicker: newValue },
-    });
-  } catch (error) {
-    console.error("Failed to update windowed-launch-picker setting:", error);
-    windowedLaunchPicker.value = !newValue;
   }
 });
 </script>

@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Global UI scaling ===== */
+/* Every Tailwind utility here (text-*, p-*, gap-*, size-*, rounded-*, ...)
+   resolves against the root font-size via rem, so scaling this one value
+   scales the whole app together. The actual value is set in JS
+   (app.vue, from settings.uiScale) rather than a CSS viewport-based
+   formula: an automatic vmin/clamp() heuristic can't see the user's actual
+   screen, so tuning it is a blind guess-and-redeploy loop, and it fights
+   with fixed-size layout (e.g. the custom titlebar, sized off the header's
+   own rem-based height) in ways that are hard to predict from window
+   dimensions alone. A plain user-facing scale slider (Settings ->
+   Interface) is the same pattern as VSCode's zoom level or a browser's
+   Ctrl+/- - predictable, and adjustable live without a rebuild. Default
+   (no setting applied yet) is the browser's normal 16px - unchanged from
+   before any of this. */
+
 html,
 body {
   -ms-overflow-style: none; /* IE and Edge /

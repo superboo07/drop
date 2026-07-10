@@ -26,9 +26,10 @@ import {
   setupHooks,
 } from "./composables/state-navigation.js";
 import { listen } from "@tauri-apps/api/event";
-import type { AppState } from "./types.js";
+import type { AppState, Settings } from "./types.js";
 
 const router = useRouter();
+const route = useRoute();
 
 useSpatialGamepadNavigation();
 
@@ -40,8 +41,34 @@ async function fetchState() {
   if (!state.value) throw new Error(`App state is: ${state.value}`);
 }
 
+// User-controlled scale (Settings -> Interface). uiScaleRef feeds
+// useLiveUiScale below, which keeps main.scss's root font-size correct as
+// the viewport changes (gamescope resolution changes, window resizes, ...),
+// not just once at startup.
+const uiScaleRef = ref(1);
+
+async function loadUiScale() {
+  const settings = await invokeWithTimeout<Settings>("fetch_settings");
+  // The launch picker is a small, sparse dialog (a handful of large,
+  // isolated buttons on an otherwise empty screen) - it doesn't read the
+  // same way the main window's dense UI does at the same scale, so a value
+  // tuned for e.g. a TV makes it feel disproportionately huge. Only half of
+  // any increase above 100% carries over to that window.
+  const isLaunchPicker = route.path === "/launch-picker";
+  uiScaleRef.value = isLaunchPicker
+    ? 1 + (settings.uiScale - 1) * 0.5
+    : settings.uiScale;
+  // Applied immediately as a flat value (not yet knowing whether this
+  // window is fullscreen-under-gamescope, which useLiveUiScale's onMounted
+  // resolves and corrects for a moment later) so there's no flash of
+  // completely unscaled content before the app renders below.
+  document.documentElement.style.fontSize = `${16 * uiScaleRef.value}px`;
+}
+
+useLiveUiScale(uiScaleRef);
+
 try {
-  await fetchState();
+  await Promise.all([fetchState(), loadUiScale()]);
 
   listen("update_state", (event) => {
     state.value = event.payload as AppState;

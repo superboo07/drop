@@ -98,3 +98,18 @@ pub fn fetch_system_data() -> SystemData {
         std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
     )
 }
+
+// gamescope sets this to point at its own compositor's Wayland socket
+// (distinct from any outer WAYLAND_DISPLAY it's nested inside), so its
+// presence is a reliable signal that we're running under it - used by the
+// frontend's UI scaling (use-ui-scale.ts) to decide whether a fullscreen
+// window's viewport size should be allowed to scale the UI down, not just
+// up: gamescope renders at an internal resolution and then uniformly
+// stretches that to the real display, so a lower internal resolution needs
+// to be compensated for or it ends up too big once stretched back out. A
+// plain (non-gamescope) fullscreen window at a genuinely low resolution has
+// no such stretch to compensate for, so it shouldn't get smaller.
+#[tauri::command]
+pub fn is_gamescope() -> bool {
+    std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+}

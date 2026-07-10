@@ -40,6 +40,14 @@ fi
 
 # ── Everything below runs inside the container ────────────────────────────────
 
+# This container has no TTY, so pnpm can't prompt to confirm purging/
+# reinstalling node_modules when the lockfile/workspace config doesn't match
+# what's already there - CI mode answers that non-interactively instead of
+# aborting. Exported (not inlined per-command) since build.mjs's own `pnpm
+# install` inside main/ (triggered by `pnpm tauri build`'s beforeBuildCommand
+# below) needs it too, not just the install on the next line.
+export CI=true
+
 # ── 1. Make sure submodules (libs/drop-base, tailscale) are present ───────────
 echo ">>> Fetching submodules..."
 git config --global --add safe.directory /workspace

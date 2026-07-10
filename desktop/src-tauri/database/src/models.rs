@@ -173,7 +173,21 @@ pub mod data {
             #[serde(default)]
             pub quit_on_close: bool,
             #[serde(default)]
-            pub windowed_launch_picker: bool, // ... other settings ...
+            pub windowed_launch_picker: bool,
+            #[serde(default)]
+            pub start_fullscreen: bool,
+            // Fraction of the default 16px root font-size (1.0 = 100%, matching
+            // every rem-based Tailwind utility app-wide - see main.scss). A
+            // user-controlled slider instead of trying to auto-detect a "correct"
+            // scale from window/viewport size: that approach can't see the
+            // user's actual screen, so it's a blind guess-and-redeploy loop, and
+            // it fights with fixed-size layout (e.g. the custom titlebar) in ways
+            // that are hard to predict from window dimensions alone.
+            #[serde(default = "default_ui_scale")]
+            pub ui_scale: f64, // ... other settings ...
+        }
+        fn default_ui_scale() -> f64 {
+            1.0
         }
         impl Default for Settings {
             fn default() -> Self {
@@ -183,6 +197,8 @@ pub mod data {
                     force_offline: false,
                     quit_on_close: false,
                     windowed_launch_picker: false,
+                    start_fullscreen: false,
+                    ui_scale: default_ui_scale(),
                 }
             }
         }

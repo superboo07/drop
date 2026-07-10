@@ -1,42 +1,44 @@
 <template>
-  <div class="min-h-full w-full flex flex-col justify-center px-6 py-6">
-    <div class="mb-4">
-      <h1 class="text-lg font-semibold font-display text-zinc-100">
-        Choose how to launch
-      </h1>
-      <p class="mt-1 text-sm text-zinc-400">
-        This game has multiple launch options configured. Select one to
-        start.
+  <div class="min-h-full w-full flex flex-col items-center justify-center px-6 py-6">
+    <div class="w-full max-w-md">
+      <div class="mb-4">
+        <h1 class="text-lg font-semibold font-display text-zinc-100">
+          Choose how to launch
+        </h1>
+        <p class="mt-1 text-sm text-zinc-400">
+          This game has multiple launch options configured. Select one to
+          start.
+        </p>
+      </div>
+
+      <p v-if="error" class="text-sm text-red-400">
+        {{ error }}
       </p>
+
+      <ol v-else class="space-y-2.5">
+        <li v-for="(option, index) in launchOptions" :key="index">
+          <button
+            :ref="(el: Element | ComponentPublicInstance | null) => setButtonRef(el, index)"
+            type="button"
+            class="transition w-full rounded-md bg-zinc-800 inline-flex items-center text-base py-3 px-3.5 gap-x-2.5 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 ring-1 ring-inset ring-zinc-700 focus:bg-zinc-700"
+            :disabled="launching"
+            @click="() => choose(index)"
+          >
+            <PlayIcon class="size-5 shrink-0" />
+            <span>{{ option.name }}</span>
+          </button>
+        </li>
+      </ol>
+
+      <button
+        type="button"
+        class="mt-4 inline-flex w-full justify-center rounded-md bg-zinc-800 px-3.5 py-2.5 text-base font-semibold text-zinc-100 shadow-sm ring-1 ring-inset ring-zinc-700 hover:bg-zinc-900"
+        :disabled="launching"
+        @click="() => cancel()"
+      >
+        Cancel
+      </button>
     </div>
-
-    <p v-if="error" class="text-sm text-red-400">
-      {{ error }}
-    </p>
-
-    <ol v-else class="space-y-3">
-      <li v-for="(option, index) in launchOptions" :key="index">
-        <button
-          :ref="(el: Element | ComponentPublicInstance | null) => setButtonRef(el, index)"
-          type="button"
-          class="transition w-full rounded-md bg-zinc-800 inline-flex items-center text-base py-4 px-4 gap-x-3 text-zinc-100 hover:text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 ring-1 ring-inset ring-zinc-700 focus:bg-zinc-700"
-          :disabled="launching"
-          @click="() => choose(index)"
-        >
-          <PlayIcon class="size-6 shrink-0" />
-          <span>{{ option.name }}</span>
-        </button>
-      </li>
-    </ol>
-
-    <button
-      type="button"
-      class="mt-4 inline-flex w-full justify-center rounded-md bg-zinc-800 px-4 py-3 text-base font-semibold text-zinc-100 shadow-sm ring-1 ring-inset ring-zinc-700 hover:bg-zinc-900"
-      :disabled="launching"
-      @click="() => cancel()"
-    >
-      Cancel
-    </button>
   </div>
 </template>
 

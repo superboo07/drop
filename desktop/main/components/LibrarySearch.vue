@@ -88,7 +88,7 @@
                   {{ item.label }}
                 </p>
                 <p
-                  class="truncate text-[10px] font-bold uppercase font-display"
+                  class="truncate text-[0.625rem] font-bold uppercase font-display"
                   :class="[
                     getGameStatusStyleText(games[item.id].status.value)[0],
                   ]"

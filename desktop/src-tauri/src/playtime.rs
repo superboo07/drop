@@ -22,6 +22,34 @@ impl PlaytimeSyncer {
     }
 }
 
+pub struct PlaytimeCheckpointer;
+
+impl PlaytimeCheckpointer {
+    pub fn new() -> Self {
+        PlaytimeCheckpointer
+    }
+}
+
+// Flushes a playtime chunk for every currently-running game every minute
+// (see ProcessManager::checkpoint_running_sessions), instead of relying
+// solely on on_process_finish recording the whole session at exit. That's
+// what makes a game killed alongside Drop itself - e.g. Steam killing the
+// entire process tree when the user hits "Stop" on a non-Steam shortcut,
+// which never gives on_process_finish a chance to run - only lose up to a
+// minute of playtime instead of the whole session. Local-only, so it runs
+// far more often than PlaytimeSyncer's network sync.
+#[async_trait]
+impl ScheduleTask for PlaytimeCheckpointer {
+    fn timeframe(&mut self) -> usize {
+        1
+    }
+
+    async fn call(&mut self) -> Result<(), anyhow::Error> {
+        ::process::PROCESS_MANAGER.lock().checkpoint_running_sessions();
+        Ok(())
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionPayload {

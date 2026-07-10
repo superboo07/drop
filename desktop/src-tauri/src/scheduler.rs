@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use log::warn;
 use tokio::time;
 
-use crate::playtime::PlaytimeSyncer;
+use crate::playtime::{PlaytimeCheckpointer, PlaytimeSyncer};
 use crate::updates::GameUpdater;
 
 #[async_trait]
@@ -30,6 +30,10 @@ pub async fn scheduler_task() -> ! {
         },
         TaskData {
             task: Box::new(PlaytimeSyncer::new()),
+            updates_since_call: usize::MAX - 1,
+        },
+        TaskData {
+            task: Box::new(PlaytimeCheckpointer::new()),
             updates_since_call: usize::MAX - 1,
         },
     ];

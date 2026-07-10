@@ -38,6 +38,12 @@ pub struct RunningProcess {
     handle: Arc<SharedChild>,
     start: SystemTime,
     manually_killed: bool,
+    // Instant (monotonic, and on Linux excludes suspended time - see
+    // checkpoint_running_sessions) marking the end of the last recorded
+    // playtime chunk, paired with the wall-clock time at that same moment
+    // so chunks can carry real started_at/ended_at timestamps.
+    checkpoint: Instant,
+    checkpoint_wall: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct ProcessManager<'a> {
@@ -240,14 +246,24 @@ impl ProcessManager<'_> {
             let _ = self.app_handle.emit("launch_external_error", &game_id);
         }
 
-        // Record a playtime session for later sync (see PlaytimeSyncer). The
-        // >2s threshold reuses the same "may have failed to launch" cutoff
-        // just above, rather than introducing a second magic number for
-        // "was this a real session" - manual kills of an actual play session
-        // still flow through here normally and get recorded like any other.
-        let seconds = elapsed.as_secs();
+        // Record a playtime session for later sync (see PlaytimeSyncer).
+        // Measured from the last checkpoint (see checkpoint_running_sessions),
+        // not from process.start, since checkpointing already flushed
+        // everything up to that point as its own chunk(s) - counting from
+        // process.start here would double-count them. Using an Instant
+        // (monotonic clock) rather than SystemTime also means a system
+        // suspend/resume during this final stretch isn't counted as
+        // playtime: on Linux, CLOCK_MONOTONIC (what Instant is backed by)
+        // excludes suspended time, unlike wall-clock time.
+        //
+        // The >2s threshold reuses the same "may have failed to launch"
+        // cutoff just above, rather than introducing a second magic number
+        // for "was this a real session" - manual kills of an actual play
+        // session still flow through here normally and get recorded like
+        // any other.
+        let seconds = process.checkpoint.elapsed().as_secs();
         if seconds > 2 {
-            let started_at: chrono::DateTime<chrono::Utc> = process.start.into();
+            let started_at = process.checkpoint_wall;
             let ended_at = chrono::Utc::now();
             db_handle
                 .applications
@@ -276,6 +292,42 @@ impl ProcessManager<'_> {
             status,
         );
         Ok(())
+    }
+
+    // Flushes a playtime chunk for every currently-running game, covering
+    // time played since each one's last checkpoint (or launch, if this is
+    // its first). Called periodically by PlaytimeCheckpointer so that a game
+    // that's still running when Drop's own process dies - e.g. Steam
+    // killing the whole process tree when the user hits "Stop" on a
+    // non-Steam shortcut, which on_process_finish never gets a chance to
+    // run for - only loses at most one checkpoint interval of playtime
+    // instead of the entire session.
+    pub fn checkpoint_running_sessions(&mut self) {
+        const MIN_CHUNK_SECS: u64 = 2;
+
+        let mut db_handle = borrow_db_mut_checked();
+        for (game_id, process) in &mut self.processes {
+            let seconds = process.checkpoint.elapsed().as_secs();
+            if seconds <= MIN_CHUNK_SECS {
+                continue;
+            }
+
+            let started_at = process.checkpoint_wall;
+            let ended_at = chrono::Utc::now();
+            db_handle
+                .applications
+                .pending_playtime_sessions
+                .push(PendingPlaytimeSession {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    game_id: game_id.clone(),
+                    seconds,
+                    started_at,
+                    ended_at,
+                });
+
+            process.checkpoint = Instant::now();
+            process.checkpoint_wall = ended_at;
+        }
     }
 
     fn fetch_process_handler(
@@ -725,6 +777,8 @@ impl ProcessManager<'_> {
                 handle: wait_thread_handle,
                 start: SystemTime::now(),
                 manually_killed: false,
+                checkpoint: Instant::now(),
+                checkpoint_wall: chrono::Utc::now(),
             },
         );
         spawn(move || {

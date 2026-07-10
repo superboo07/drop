@@ -75,6 +75,11 @@ export default defineEventHandler(async (h3) => {
     },
   });
 
+  const playtime = await prisma.playtime.findUnique({
+    where: { gameId_userId: { gameId: game.id, userId } },
+    select: { seconds: true },
+  });
+
   const sizes = await Promise.all(
     game.versions!.map(
       async (v) => (await gameSizeManager.getVersionSize(v.versionId))!,
@@ -100,5 +105,6 @@ export default defineEventHandler(async (h3) => {
     rating,
     sizes,
     platforms: platforms.values().toArray(),
+    playtimeSeconds: playtime?.seconds ?? 0,
   };
 });

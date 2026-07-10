@@ -19,9 +19,10 @@ model User {
     tokens   APIToken[]
     sessions Session[]
 
-    saves       SaveSlot[]
-    screenshots Screenshot[]
-    playtime    Playtime[]
+    saves            SaveSlot[]
+    screenshots      Screenshot[]
+    playtime         Playtime[]
+    playtimeSessions PlaytimeSession[]
 
     groups UserGroup[]
 }

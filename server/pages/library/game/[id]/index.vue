@@ -35,9 +35,18 @@
         >
           {{ game.mName }}
         </h1>
-        <p class="mt-4 mb-8 text-sm sm:text-lg text-zinc-400 max-w-3xl">
-          {{ game.mShortDescription }}
-        </p>
+        <div class="mt-4 mb-8 max-w-3xl">
+          <p class="text-sm sm:text-lg text-zinc-400">
+            {{ game.mShortDescription }}
+          </p>
+          <p
+            v-if="playtimeSeconds > 0"
+            class="mt-2 inline-flex items-center gap-x-1.5 text-sm text-zinc-400"
+          >
+            <ClockIcon class="h-4 w-4" aria-hidden="true" />
+            {{ $t("library.playtime", [formatPlaytime(playtimeSeconds)]) }}
+          </p>
+        </div>
 
         <div class="flex items-stretch flex-col lg:flex-row gap-3">
           <button
@@ -118,6 +127,7 @@ import {
   ArrowLeftIcon,
   ArrowTopRightOnSquareIcon,
   ArrowUpRightIcon,
+  ClockIcon,
 } from "@heroicons/vue/20/solid";
 import { micromark } from "micromark";
 
@@ -126,12 +136,54 @@ const { t } = useI18n();
 const route = useRoute();
 const id = route.params.id.toString();
 
-const { game: rawGame } = await $dropFetch(`/api/v1/games/${id}`);
+const { game: rawGame, playtimeSeconds: initialPlaytimeSeconds } =
+  await $dropFetch(`/api/v1/games/${id}`);
 const game = computed(() => {
   if (!rawGame) {
     throw createError({ statusCode: 404, message: t("library.notFound") });
   }
   return rawGame;
+});
+
+function formatPlaytime(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours === 0) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
+// The total only moves when another device syncs a session (every 5 minutes
+// at most, see drop-app's PlaytimeSyncer) - polled instead of pushed since
+// there's no server->client event for it. Also refreshed when the tab
+// regains visibility so switching back from another device shows the
+// update immediately rather than waiting for the next poll tick.
+const playtimeSeconds = ref(initialPlaytimeSeconds);
+const PLAYTIME_POLL_MS = 60_000;
+let playtimeInterval: ReturnType<typeof setInterval> | undefined;
+
+async function refreshPlaytime() {
+  try {
+    const { playtimeSeconds: seconds } = await $dropFetch(
+      `/api/v1/games/${id}`,
+    );
+    playtimeSeconds.value = seconds;
+  } catch (e) {
+    console.warn("failed to refresh playtime", e);
+  }
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === "visible") refreshPlaytime();
+}
+
+onMounted(() => {
+  playtimeInterval = setInterval(refreshPlaytime, PLAYTIME_POLL_MS);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+});
+
+onUnmounted(() => {
+  clearInterval(playtimeInterval);
+  document.removeEventListener("visibilitychange", onVisibilityChange);
 });
 
 // Convert markdown to HTML

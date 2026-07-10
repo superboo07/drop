@@ -50,11 +50,12 @@ model Game {
   library     Library @relation(fields: [libraryId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   libraryPath String
 
-  collections CollectionEntry[]
-  saves       SaveSlot[]
-  screenshots Screenshot[]
-  tags        GameTag[]
-  playtime    Playtime[]
+  collections      CollectionEntry[]
+  saves            SaveSlot[]
+  screenshots      Screenshot[]
+  tags             GameTag[]
+  playtime         Playtime[]
+  playtimeSessions PlaytimeSession[]
 
   developers             Company[]               @relation(name: "developers")
   publishers             Company[]               @relation(name: "publishers")
@@ -236,6 +237,30 @@ model Playtime {
 
   @@id([gameId, userId])
   @@index([userId])
+}
+
+// Per-session playtime ledger. Also the idempotency mechanism for playtime
+// sync: id is client-generated (no @default), so a client retrying the same
+// session collides on this primary key and is recognized as already-applied
+// instead of being double-counted against Playtime.seconds.
+model PlaytimeSession {
+  id String @id
+
+  gameId String
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  seconds   Int
+  startedAt DateTime @db.Timestamptz(6)
+  endedAt   DateTime @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([userId, gameId])
 }
 
 model Company {

@@ -19,4 +19,5 @@ model Client {
 
   lastAccessedSaves SaveSlot[]
   tokens            APIToken[]
+  playtimeSessions  PlaytimeSession[]
 }

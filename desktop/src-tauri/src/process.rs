@@ -7,7 +7,11 @@ use process::{
     process_manager::{LaunchOption, ProcessHandlerOption, ProcessManager},
 };
 use log::info;
-use serde::Serialize;
+use remote::{
+    error::RemoteAccessError,
+    requests::{generate_url, make_authenticated_get},
+};
+use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 use utils::external_open::open_externally;
@@ -25,6 +29,41 @@ pub fn get_launch_options(id: String) -> Result<Vec<LaunchOption>, ProcessError>
 #[tauri::command]
 pub fn get_process_handlers(id: String) -> Result<Vec<ProcessHandlerOption>, ProcessError> {
     PROCESS_MANAGER.lock().get_process_handlers(id)
+}
+
+#[derive(Deserialize)]
+struct RemotePlaytimeResponse {
+    seconds: u64,
+}
+
+// Merges the server's confirmed total with any locally-recorded sessions
+// that haven't synced yet, so the displayed number is accurate even before
+// a sync completes. Falls back to local-only on any network failure -
+// still an accurate figure for this device, just not aware of other
+// devices' playtime until back online.
+#[tauri::command]
+pub async fn fetch_game_playtime(game_id: String) -> Result<u64, RemoteAccessError> {
+    let local: u64 = {
+        let db = borrow_db_checked();
+        db.applications
+            .pending_playtime_sessions
+            .iter()
+            .filter(|s| s.game_id == game_id)
+            .map(|s| s.seconds)
+            .sum()
+    };
+
+    let url = generate_url(&["/api/v1/client/playtime", &game_id], &[])?;
+    let server = match make_authenticated_get(url).await {
+        Ok(response) if response.status().is_success() => response
+            .json::<RemotePlaytimeResponse>()
+            .await
+            .map(|p| p.seconds)
+            .unwrap_or(0),
+        _ => 0,
+    };
+
+    Ok(server + local)
 }
 
 #[derive(Serialize)]

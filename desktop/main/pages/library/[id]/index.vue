@@ -22,6 +22,13 @@
         >
           {{ game.mName }}
         </h1>
+        <p
+          v-if="playtimeSeconds !== null && playtimeSeconds > 0"
+          class="mt-2 inline-flex items-center gap-x-1 text-sm text-zinc-400"
+        >
+          <ClockIcon class="size-4" />
+          {{ formatPlaytime(playtimeSeconds) }}
+        </p>
         <div class="relative" v-if="status.type === 'Installed' && status.install_type.type != InstalledType.PartiallyInstalled">
           <div
             v-if="!version?.userConfiguration?.enableUpdates"
@@ -663,6 +670,7 @@ import {
   PhotoIcon,
   PlayIcon,
   InformationCircleIcon,
+  ClockIcon,
 } from "@heroicons/vue/20/solid";
 import { BuildingStorefrontIcon } from "@heroicons/vue/24/outline";
 import {
@@ -674,6 +682,7 @@ import {
   XCircleIcon,
 } from "@heroicons/vue/24/solid";
 import { micromark } from "micromark";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { InstalledType } from "~/types";
 
 const route = useRoute();
@@ -692,6 +701,53 @@ const installDirs = ref<undefined | Array<string>>();
 const currentImageIndex = ref(0);
 
 const configureModalOpen = ref(false);
+
+// Merges the server's confirmed total with any not-yet-synced local seconds
+// (see fetch_game_playtime), so this is accurate even before a sync happens.
+const playtimeSeconds = ref<number | null>(null);
+async function refreshPlaytime() {
+  try {
+    playtimeSeconds.value = await invokeWithTimeout<number>(
+      "fetch_game_playtime",
+      { gameId: id },
+      Infinity,
+    );
+  } catch (e) {
+    console.log("failed to fetch playtime", e);
+  }
+}
+
+// The server total only moves when another device syncs a session (every 5
+// minutes at most, see PlaytimeSyncer) - polled instead of pushed since
+// there's no server->client event for it. Also refreshed on window focus so
+// switching back from another device shows the update immediately rather
+// than waiting for the next poll tick.
+const PLAYTIME_POLL_MS = 60_000;
+let playtimeInterval: ReturnType<typeof setInterval> | undefined;
+let unlistenPlaytimeFocus: (() => void) | undefined;
+
+onMounted(async () => {
+  await refreshPlaytime();
+  playtimeInterval = setInterval(refreshPlaytime, PLAYTIME_POLL_MS);
+  unlistenPlaytimeFocus = await getCurrentWindow().onFocusChanged(
+    ({ payload: focused }) => {
+      if (focused) refreshPlaytime();
+    },
+  );
+});
+
+onUnmounted(() => {
+  clearInterval(playtimeInterval);
+  unlistenPlaytimeFocus?.();
+});
+
+function formatPlaytime(totalSeconds: number): string {
+  if (totalSeconds < 60) return "Less than a minute played";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours === 0) return `${minutes}m played`;
+  return `${hours}h ${minutes}m played`;
+}
 
 async function installFlow() {
   installFlowOpen.value = true;

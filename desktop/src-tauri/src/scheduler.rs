@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use log::warn;
 use tokio::time;
 
+use crate::playtime::PlaytimeSyncer;
 use crate::updates::GameUpdater;
 
 #[async_trait]
@@ -22,10 +23,16 @@ pub async fn scheduler_task() -> ! {
     let mut interval = time::interval(Duration::from_mins(1));
     interval.tick().await;
 
-    let mut tasks = vec![TaskData {
-        task: Box::new(GameUpdater::new()),
-        updates_since_call: usize::MAX - 1,
-    }];
+    let mut tasks = vec![
+        TaskData {
+            task: Box::new(GameUpdater::new()),
+            updates_since_call: usize::MAX - 1,
+        },
+        TaskData {
+            task: Box::new(PlaytimeSyncer::new()),
+            updates_since_call: usize::MAX - 1,
+        },
+    ];
 
     loop {
         for task in &mut tasks {

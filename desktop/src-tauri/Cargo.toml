@@ -35,7 +35,7 @@ atomic-instant-full = "0.1.0"
 bitcode = "0.6.6"
 bytes = "1.10.1"
 cacache = "13.1.0"
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
 client = { path = "./client", version = "0.1.0" } # client
 database = { path = "./database" } # database
 deranged = "=0.4.0"

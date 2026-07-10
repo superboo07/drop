@@ -62,6 +62,7 @@ mod collections;
 mod download_manager;
 mod downloads;
 mod games;
+mod playtime;
 mod process;
 mod remote;
 mod scheduler;
@@ -267,6 +268,7 @@ pub fn run() {
             // Processes
             launch_game,
             kill_game,
+            fetch_game_playtime,
             toggle_autostart,
             get_autostart_enabled,
             open_process_logs,

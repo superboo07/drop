@@ -11,8 +11,8 @@ use std::{
 
 use database::{
     ApplicationTransientStatus, Database, DownloadableMetadata, GameDownloadStatus, GameVersion,
-    borrow_db_checked, borrow_db_mut_checked, db::DATA_ROOT_DIR, models::data::InstalledGameType,
-    platform::Platform,
+    PendingPlaytimeSession, borrow_db_checked, borrow_db_mut_checked, db::DATA_ROOT_DIR,
+    models::data::InstalledGameType, platform::Platform,
 };
 use dynfmt::Format;
 use dynfmt::SimpleCurlyFormat;
@@ -238,6 +238,27 @@ impl ProcessManager<'_> {
         {
             warn!("drop detected that the game {game_id} may have failed to launch properly");
             let _ = self.app_handle.emit("launch_external_error", &game_id);
+        }
+
+        // Record a playtime session for later sync (see PlaytimeSyncer). The
+        // >2s threshold reuses the same "may have failed to launch" cutoff
+        // just above, rather than introducing a second magic number for
+        // "was this a real session" - manual kills of an actual play session
+        // still flow through here normally and get recorded like any other.
+        let seconds = elapsed.as_secs();
+        if seconds > 2 {
+            let started_at: chrono::DateTime<chrono::Utc> = process.start.into();
+            let ended_at = chrono::Utc::now();
+            db_handle
+                .applications
+                .pending_playtime_sessions
+                .push(PendingPlaytimeSession {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    game_id: game_id.clone(),
+                    seconds,
+                    started_at,
+                    ended_at,
+                });
         }
 
         let version_data = match db_handle.applications.game_versions.get(&meta.version) {

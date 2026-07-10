@@ -19,6 +19,7 @@ shell-words = "1.1.1"
 tauri = "*"
 tauri-plugin-opener = "*"
 utils = { path = "../utils", version = "0.1.0" }
+uuid = { version = "1.10.0", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

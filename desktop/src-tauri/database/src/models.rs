@@ -21,6 +21,7 @@ pub mod data {
     pub type DownloadType = v1::DownloadType;
     pub type DatabaseApplications = v1::DatabaseApplications;
     pub type UserConfiguration = v1::UserConfiguration;
+    pub type PendingPlaytimeSession = v1::PendingPlaytimeSession;
 
     use std::collections::HashMap;
 
@@ -279,6 +280,22 @@ pub mod data {
             }
         }
 
+        // A play session not yet acknowledged by the server. Queued here so
+        // offline play survives app restarts; drained by the playtime sync
+        // scheduler task once online, and only removed once the server
+        // explicitly confirms it (see PlaytimeSyncer) - never removed just
+        // because a sync request was sent, so a lost response just means a
+        // harmless, idempotent resend next cycle rather than lost playtime.
+        #[derive(Serialize, Deserialize, Clone, Debug)]
+        #[serde(rename_all = "camelCase")]
+        pub struct PendingPlaytimeSession {
+            pub id: String,
+            pub game_id: String,
+            pub seconds: u64,
+            pub started_at: chrono::DateTime<chrono::Utc>,
+            pub ended_at: chrono::DateTime<chrono::Utc>,
+        }
+
         #[serde_as]
         #[derive(Serialize, Clone, Deserialize, Default)]
         #[serde(rename_all = "camelCase")]
@@ -292,6 +309,9 @@ pub mod data {
 
             pub additional_proton_paths: Vec<String>,
             pub default_proton_path: Option<String>,
+
+            #[serde(default)]
+            pub pending_playtime_sessions: Vec<PendingPlaytimeSession>,
 
             #[serde(skip)]
             pub transient_statuses: HashMap<DownloadableMetadata, ApplicationTransientStatus>,
@@ -326,6 +346,7 @@ pub mod data {
                     transient_statuses: HashMap::new(),
                     additional_proton_paths: Vec::new(),
                     default_proton_path: None,
+                    pending_playtime_sessions: Vec::new(),
                 },
                 prev_database,
                 base_url: String::new(),

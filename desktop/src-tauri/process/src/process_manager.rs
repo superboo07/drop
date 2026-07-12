@@ -629,6 +629,37 @@ impl ProcessManager<'_> {
             )
         };
 
+        // Chunk-level downloads normally set the executable bit from the
+        // server manifest (see games::downloads::download_logic), but that
+        // can still leave a binary non-executable - e.g. a manifest that
+        // never marked the file executable, or a repair/patch path that
+        // writes the file outside the chunk-download flow. Make sure the
+        // thing we're actually about to spawn is runnable regardless of how
+        // it ended up on disk.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            if let Ok(metadata) = std::fs::metadata(&game_executable_path) {
+                let mut permissions = metadata.permissions();
+                if permissions.mode() & 0o111 == 0 {
+                    info!(
+                        "{}: {} is missing its executable bit, adding it",
+                        meta.id,
+                        game_executable_path.display()
+                    );
+                    permissions.set_mode(permissions.mode() | 0o111);
+                    if let Err(e) = std::fs::set_permissions(&game_executable_path, permissions) {
+                        warn!(
+                            "{}: failed to set executable bit on {}: {e}",
+                            meta.id,
+                            game_executable_path.display()
+                        );
+                    }
+                }
+            }
+        }
+
         let mut parsed_launch = ParsedCommand::parse(target_launch_string.clone())?;
         let executable_name = parsed_launch.command.clone();
         parsed_launch.make_absolute(install_dir.into());

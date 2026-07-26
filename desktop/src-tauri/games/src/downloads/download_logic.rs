@@ -15,7 +15,7 @@ use download_manager::util::download_thread_control_flag::{
 use download_manager::util::progress_object::ProgressHandle;
 use droplet_types::ChunkData;
 use futures_util::StreamExt as _;
-use log::{debug, info};
+use log::{debug, info, warn};
 use remote::auth::generate_authorization_header;
 use remote::error::{DropServerError, RemoteAccessError};
 use remote::utils::DROP_CLIENT_ASYNC;
@@ -80,6 +80,17 @@ pub async fn download_game_chunk(
 
     if response.status() != 200 {
         info!("chunk request got status code: {}", response.status());
+        // The depot doesn't have this chunk at all. That's not a transient
+        // communication failure - the manifest we're downloading from is out
+        // of date with the depot's content, and every retry of every chunk it
+        // lists will 404 the same way. Report it as its own error so the
+        // download agent can resync instead of failing the download forever.
+        if response.status() == 404 {
+            warn!(
+                "depot {depot} has no chunk {chunk_id} for {game_id}/{version_id}: manifest is out of sync with depot content"
+            );
+            return Err(ApplicationDownloadError::ContentOutOfSync);
+        }
         let raw_res = response.text().await.map_err(|e| {
             ApplicationDownloadError::Communication(RemoteAccessError::FetchErrorLegacy(e.into()))
         })?;

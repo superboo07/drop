@@ -66,6 +66,11 @@ pub struct GameDownloadAgent {
     sender: Sender<DownloadManagerSignal>,
     pub dropdata: DropData,
     status: Mutex<DownloadStatus>,
+    // Whether we've already thrown away our manifest and re-fetched a fresh,
+    // uncached, non-delta one because a depot 404'd a chunk. Only worth doing
+    // once per agent - if the content is still missing afterwards, it's really
+    // gone from the depots and no amount of resyncing will conjure it up.
+    resynced_manifest: Mutex<bool>,
 }
 
 impl Debug for GameDownloadAgent {
@@ -125,6 +130,7 @@ impl GameDownloadAgent {
             status: Mutex::new(DownloadStatus::Queued),
             depot_manager,
             configuration,
+            resynced_manifest: Mutex::new(false),
         };
 
         result.ensure_manifest_exists().await?;
@@ -188,7 +194,19 @@ impl GameDownloadAgent {
 
         info!("beginning download for {}...", self.metadata().id);
 
-        let res = self.run().await;
+        let mut res = self.run().await;
+
+        // A depot 404'd a chunk our manifest listed. Before giving up (and
+        // leaving the user unable to ever install this game again without
+        // manually wiping their client), throw away everything we're working
+        // from and start over as if this were a fresh install: an uncached,
+        // non-delta manifest and no locally-completed chunks.
+        if matches!(res, Err(ApplicationDownloadError::ContentOutOfSync))
+            && self.resync_manifest_from_scratch().await
+        {
+            self.setup_download(app_handle)?;
+            res = self.run().await;
+        }
 
         debug!(
             "{} took {}ms to download",
@@ -196,6 +214,43 @@ impl GameDownloadAgent {
             timer.elapsed().as_millis()
         );
         res
+    }
+
+    /// Recovery path for [`ApplicationDownloadError::ContentOutOfSync`]:
+    /// discard the manifest we were working from, ask the server for a freshly
+    /// built full one, and forget every chunk we thought we'd already
+    /// completed. Returns whether the caller should re-run the download.
+    ///
+    /// Only ever runs once per agent, so a genuinely missing version fails
+    /// after one extra attempt instead of looping.
+    async fn resync_manifest_from_scratch(&self) -> bool {
+        {
+            let mut resynced = lock!(self.resynced_manifest);
+            if *resynced {
+                return false;
+            }
+            *resynced = true;
+        }
+
+        warn!(
+            "manifest for {} is out of sync with depot content, re-fetching a full manifest and restarting the download",
+            self.metadata.id
+        );
+
+        if let Err(e) = self.download_manifest(true).await {
+            error!(
+                "failed to re-fetch manifest for {}: {e:?}",
+                self.metadata.id
+            );
+            return false;
+        }
+
+        // Whatever we downloaded against the old manifest can't be assumed to
+        // match the new one, so re-verify/re-fetch the lot.
+        self.dropdata.set_contexts(&[]);
+        self.dropdata.write();
+
+        true
     }
 
     pub fn check_manifest_exists(&self) -> bool {
@@ -207,23 +262,34 @@ impl GameDownloadAgent {
             return Ok(());
         }
 
-        self.download_manifest().await
+        self.download_manifest(false).await
     }
 
-    async fn download_manifest(&self) -> Result<(), ApplicationDownloadError> {
+    /// Fetches the download manifest for this version.
+    ///
+    /// `full_resync` asks the server to rebuild the manifest from scratch
+    /// (bypassing its manifest cache) and drops the delta hint, so we get the
+    /// complete file/chunk set for this version rather than only what changed
+    /// since whatever we last had installed. That's the equivalent of a fresh
+    /// client install, and is what we fall back to when the manifest we were
+    /// given references content the depots don't have.
+    async fn download_manifest(&self, full_resync: bool) -> Result<(), ApplicationDownloadError> {
         let client = DROP_CLIENT_ASYNC.clone();
+        let previous = if full_resync {
+            ""
+        } else {
+            self.dropdata
+                .previously_installed_version
+                .as_deref()
+                .unwrap_or("")
+        };
         let url = generate_url(
             &["/api/v1/client/game/manifest"],
             &[
                 ("id", &self.metadata.id),
                 ("version", &self.metadata.version),
-                (
-                    "previous",
-                    self.dropdata
-                        .previously_installed_version
-                        .as_ref()
-                        .map_or("", |v| v),
-                ),
+                ("previous", previous),
+                ("refresh", if full_resync { "true" } else { "false" }),
             ],
         )
         .map_err(ApplicationDownloadError::Communication)?;
@@ -410,15 +476,18 @@ impl GameDownloadAgent {
                     continue;
                 }
 
-                let (depot, permit) = match self
-                    .depot_manager
-                    .next_depot(&self.metadata.id, &self.metadata.version)
-                {
-                    Ok(v) => v,
-                    Err(err) => {
-                        return Err(err.into());
-                    }
-                };
+                // Pick a depot that has the version this chunk actually
+                // belongs to, not the version we're installing - for a delta
+                // version, most chunks are served out of the older versions
+                // its manifest chain resolves through, and a depot that only
+                // holds the newer version would 404 every one of them.
+                let (depot, permit) =
+                    match self.depot_manager.next_depot(&self.metadata.id, version_id) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            return Err(err.into());
+                        }
+                    };
 
                 let local_version_id = version_id.clone();
                 while chunk_completions.len() >= max_download_threads {
@@ -454,13 +523,12 @@ impl GameDownloadAgent {
                             Err(e) => {
                                 warn!("got error for chunk id {}: {e:?}", chunk_id);
 
-                                let retry = true; /*matches!(
-                                &e,
-                                ApplicationDownloadError::Communication(_)
-                                | ApplicationDownloadError::Checksum
-                                | ApplicationDownloadError::Lock
-                                | ApplicationDownloadError::IoError(_)
-                                );*/
+                                // A missing chunk is deterministic - the depot
+                                // will 404 it just as hard two more times.
+                                // Fail out immediately so the agent can resync
+                                // its manifest and start over.
+                                let retry =
+                                    !matches!(e, ApplicationDownloadError::ContentOutOfSync);
 
                                 if i == RETRY_COUNT - 1 || !retry {
                                     warn!("retry logic failed, not re-attempting.");

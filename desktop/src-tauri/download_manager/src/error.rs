@@ -42,6 +42,13 @@ pub enum ApplicationDownloadError {
     IoError(Arc<io::Error>),
     DownloadError(RemoteAccessError),
     InvalidCommand,
+    /// A depot returned 404 for a chunk the manifest told us to download, i.e.
+    /// the manifest we're working from no longer matches the content the
+    /// depots actually hold. Distinct from the other communication errors
+    /// because it's deterministic (retrying the same request always fails) and
+    /// recoverable (re-fetching an uncached, non-delta manifest usually fixes
+    /// it), so the download agent handles it specially.
+    ContentOutOfSync,
 }
 
 impl Display for ApplicationDownloadError {
@@ -69,6 +76,10 @@ impl Display for ApplicationDownloadError {
                 write!(f, "Download failed with error {error:?}")
             }
             ApplicationDownloadError::InvalidCommand => write!(f, "Invalid command state"),
+            ApplicationDownloadError::ContentOutOfSync => write!(
+                f,
+                "the server's download manifest doesn't match the content available on its depots. Drop tried to resync and download this game from scratch, and the content is still missing - ask your server admin to re-import this game version."
+            ),
         }
     }
 }

@@ -116,6 +116,29 @@ export class TorrentialService extends Service<unknown> {
     this.queryProcessors.set(processor.queryType, processor);
   }
 
+  /**
+   * Drops the depot's cached download context for a version, so the next
+   * chunk request rebuilds it against the version's current manifest.
+   *
+   * Must be called whenever a version's files/manifest change in place -
+   * otherwise the depot keeps serving (and 404ing against) the manifest it
+   * had when it first saw the version, and clients get 404s for every chunk
+   * of the new manifest. Best-effort: the depot also self-heals on a chunk
+   * miss, this just avoids making a client eat the first failure.
+   */
+  async invalidateDownloadContext(gameId: string, versionId: string) {
+    try {
+      await $fetch(`${INTERNAL_DEPOT_URL.toString()}invalidate`, {
+        method: "POST",
+        body: { game: gameId, version: versionId },
+      });
+    } catch (e) {
+      this.logger.warn(
+        `failed to invalidate depot download context for ${gameId}/${versionId}: ${e}`,
+      );
+    }
+  }
+
   private setupRead() {
     if (!this.socket) return;
     this.socket.on("data", (data) => {

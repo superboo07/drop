@@ -21,6 +21,7 @@ import type { ImportVersion } from "~/server/api/v1/admin/import/version/index.p
 import { GameType, type Platform } from "~/prisma/client/enums";
 import { castManifest } from "./manifest/utils";
 import { fetchDeltaDependents, invalidateManifestCache } from "./manifest";
+import TORRENTIAL_SERVICE from "~/server/internal/services/torrential";
 import { Shescape } from "shescape";
 import type { Prisma } from "~/prisma/client/client";
 
@@ -748,6 +749,10 @@ class LibraryManager {
             await gameSizeManager.invalidateVersion(target);
           }
           await gameSizeManager.invalidateGame(gameId);
+          // This version's chunk ids just changed, so the depot's cached
+          // manifest for it is stale and would 404 every chunk the new
+          // manifest lists.
+          await TORRENTIAL_SERVICE.invalidateDownloadContext(gameId, versionId);
 
           try {
             await gameSizeManager.getVersionSize(versionId);
@@ -845,6 +850,10 @@ class LibraryManager {
             await gameSizeManager.invalidateVersion(target);
           }
           await gameSizeManager.invalidateGame(gameId);
+          // This version's chunk ids just changed, so the depot's cached
+          // manifest for it is stale and would 404 every chunk the new
+          // manifest lists.
+          await TORRENTIAL_SERVICE.invalidateDownloadContext(gameId, versionId);
 
           try {
             await gameSizeManager.getVersionSize(versionId);

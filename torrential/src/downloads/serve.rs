@@ -74,10 +74,43 @@ pub async fn serve_file(
 ) -> Result<impl IntoResponse, StatusCode> {
     let context_cache = &state.context_cache;
 
-    let mut context = get_or_create_context(&state, context_cache, game_id, version_name).await?;
+    let mut context =
+        get_or_create_context(&state, context_cache, game_id.clone(), version_name.clone()).await?;
     context.reset_last_access();
 
-    let chunk_data = lookup_chunk(&chunk_id, &context)?;
+    let lookup = lookup_chunk(&chunk_id, &context);
+    let chunk_data = match lookup {
+        Ok(chunk_data) => chunk_data,
+        Err(status) => {
+            // The chunk isn't in the manifest we have cached for this version.
+            // Usually that means the version's files were resynced/replaced on
+            // the server since we built this context, and the client is
+            // (correctly) asking for chunks from the new manifest. Drop the
+            // cached context and rebuild it from the server before deciding
+            // the chunk really doesn't exist.
+            //
+            // Without this, the stale context sticks around indefinitely -
+            // every failing request refreshes its TTL, so it never gets
+            // cleaned up, and the client can never install that game again.
+            if !context.may_be_stale() {
+                return Err(status);
+            }
+
+            // Must not be holding a reference into the map when we remove.
+            drop(context);
+            info!(
+                "chunk {chunk_id} missing from cached manifest for {game_id}/{version_name}, rebuilding context"
+            );
+            context_cache.remove(&(game_id.clone(), version_name.clone()));
+
+            let mut rebuilt =
+                get_or_create_context(&state, context_cache, game_id, version_name).await?;
+            rebuilt.reset_last_access();
+            let chunk_data = lookup_chunk(&chunk_id, &rebuilt)?;
+            context = rebuilt;
+            chunk_data
+        }
+    };
     if chunk_data.files.len() >= *SEMPAHORE_COUNT {
         return Err(StatusCode::INSUFFICIENT_STORAGE);
     }

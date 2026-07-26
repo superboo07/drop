@@ -1,4 +1,7 @@
-use std::{path::PathBuf, time::Instant};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use droplet_rs::{
     manifest::Manifest,
@@ -16,18 +19,32 @@ use crate::{
     util::ErrorOption,
 };
 
+/// How recently a context can have been built and still be considered
+/// possibly-stale. Rebuilding costs a round-trip to the Drop server, so a
+/// request for a chunk that simply doesn't exist (a bogus or malicious chunk
+/// id) can't make us re-fetch the version data over and over.
+const MIN_REBUILD_INTERVAL: Duration = Duration::from_secs(30);
+
 pub struct DownloadContext {
     pub(crate) manifest: Manifest,
     pub(crate) backend: Box<dyn VersionBackend + Send + Sync + 'static>,
     last_access: Instant,
+    created: Instant,
 }
 impl DownloadContext {
-    #[must_use] 
+    #[must_use]
     pub fn last_access(&self) -> Instant {
         self.last_access
     }
     pub fn reset_last_access(&mut self) {
         self.last_access = Instant::now();
+    }
+    /// Whether it's worth throwing this context away and rebuilding it from
+    /// the Drop server because a chunk we were asked for isn't in its
+    /// manifest.
+    #[must_use]
+    pub fn may_be_stale(&self) -> bool {
+        self.created.elapsed() >= MIN_REBUILD_INTERVAL
     }
 }
 
@@ -44,6 +61,7 @@ pub async fn create_download_context(
         manifest: convert_protobuf_manifest(version_data.manifest.unwrap()),
         backend,
         last_access: Instant::now(),
+        created: Instant::now(),
     };
 
     Ok(download_context)

@@ -2,3 +2,4 @@ dist/
 node_modules/
 drop-custom.tar.gz
 /*.AppImage
+.pnpm-store

@@ -36,10 +36,22 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     echo ">>> Building Docker builder image..."
     docker build -f Dockerfile.build -t "$BUILDER_IMAGE" .
 
+    # Keep node_modules and the pnpm store on named volumes rather than on the
+    # bind mount. pnpm places its store next to the project so it can hardlink,
+    # which inside the container means /workspace/.pnpm-store -- a path that can
+    # never match the host's store. On a mismatch pnpm reconfigures and purges
+    # node_modules before reinstalling, so sharing those directories means every
+    # AppImage build wipes whatever the host had installed (leaving, say, the
+    # server workspace with no dependencies) and drops a .pnpm-store inside the
+    # repo. Volumes also let the deps survive between builds.
     echo ">>> Running build inside Docker..."
     docker run --rm \
         -e DROP_IN_DOCKER=1 \
+        -e npm_config_store_dir=/pnpm-store \
         -v "$REPO_ROOT":/workspace \
+        -v drop-appimage-pnpm-store:/pnpm-store \
+        -v drop-appimage-node-modules:/workspace/node_modules \
+        -v drop-appimage-main-node-modules:"/workspace/$APP_DIR/main/node_modules" \
         -w /workspace \
         "$BUILDER_IMAGE" \
         bash "$APP_DIR/build_appimage.sh"

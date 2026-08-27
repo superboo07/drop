@@ -76,7 +76,7 @@ export default defineEventHandler(async (h3) => {
   });
 
   const playtime = await prisma.playtime.findUnique({
-    where: { gameId_userId: { gameId: game.id, userId } },
+    where: { gameId_userId: { gameId: game.id, userId: user.id } },
     select: { seconds: true },
   });
 

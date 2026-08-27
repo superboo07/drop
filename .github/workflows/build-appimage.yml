@@ -1,0 +1,32 @@
+name: "build appimage"
+
+on: push
+
+# Builds the Linux AppImage inside Docker (bash desktop/build_appimage.sh /
+# desktop/Dockerfile.build) on every commit and uploads it as a workflow
+# artifact, so any push has a downloadable, testable AppImage without cutting a
+# release. build_appimage.sh names the output after the commit it was built
+# from -- that's the single place the naming scheme lives, so it isn't
+# duplicated here, and it drops the result at the repo root.
+# See client-release.yml for the version-tagged, multi-platform release build.
+
+jobs:
+  build-appimage:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build AppImage
+        run: bash desktop/build_appimage.sh
+
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Drop Desktop Client_${{ steps.sha.outputs.short }}_amd64
+          path: "*.AppImage"

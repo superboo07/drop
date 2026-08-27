@@ -4,6 +4,18 @@ packages:
   - "sites/*"
   - "desktop/"
 
+# pnpm 11 reads this map rather than onlyBuiltDependencies below; the repo
+# pins pnpm 10 via packageManager, which reads onlyBuiltDependencies and
+# ignores this. Keeping both means the AppImage build's toolchain is approved
+# under either version. Mirrors what the desktop app's own workspace file
+# carried before it was folded into this repo.
+allowBuilds:
+  optipng-bin: true
+  pngquant-bin: true
+  sharp: true
+  tauri: true
+  zopflipng-bin: true
+
 onlyBuiltDependencies:
   - "@bufbuild/buf"
   - "@parcel/watcher"
@@ -15,6 +27,10 @@ onlyBuiltDependencies:
   - prisma
   - sharp
   - unrs-resolver
+  - optipng-bin
+  - pngquant-bin
+  - tauri
+  - zopflipng-bin
   - contentlayer
   - contentlayer2
   - protobufjs

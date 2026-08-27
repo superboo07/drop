@@ -7,6 +7,10 @@
 # No extra tools needed on the host beyond Docker.
 # The script builds the builder image (Dockerfile.build) once, then mounts
 # the repo into a container and runs the full Tauri build inside it.
+# The whole monorepo (not just desktop/) is mounted, since the pnpm
+# workspace root and the .git directory both live one level up and the
+# build needs each of them - the workspace to resolve desktop/'s deps, and
+# .git for the commit hash the output is named after.
 # Output: the built .AppImage is copied to the repo root, named after the
 # commit it was built from (Drop Desktop Client_<short-sha>_amd64.AppImage,
 # matching tauri-bundler's own "{productName}_{version}_{arch}" convention
@@ -18,6 +22,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Path of desktop/ relative to the repo root, so the same value works on the
+# host and at /workspace inside the container.
+APP_DIR="${SCRIPT_DIR#"$REPO_ROOT"/}"
 cd "$SCRIPT_DIR"
 
 BUILDER_IMAGE="drop-app-builder"
@@ -31,10 +39,10 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     echo ">>> Running build inside Docker..."
     docker run --rm \
         -e DROP_IN_DOCKER=1 \
-        -v "$SCRIPT_DIR":/workspace \
+        -v "$REPO_ROOT":/workspace \
         -w /workspace \
         "$BUILDER_IMAGE" \
-        bash build_appimage.sh
+        bash "$APP_DIR/build_appimage.sh"
     exit $?
 fi
 
@@ -48,22 +56,26 @@ fi
 # below) needs it too, not just the install on the next line.
 export CI=true
 
-# ── 1. Make sure submodules (libs/drop-base, tailscale) are present ───────────
-echo ">>> Fetching submodules..."
-git config --global --add safe.directory /workspace
-git submodule update --init --recursive
-
-# ── 2. Install root deps (tauri CLI) ──────────────────────────────────────────
+# ── 1. Install desktop deps (tauri CLI) from the workspace root ─────────────
+# desktop/ is a member of the monorepo's pnpm workspace, so the install has to
+# run from the root. --filter keeps it to this package rather than also
+# installing server/ and sites/, which the AppImage build doesn't need. (The
+# Nuxt view under main/ has its own lockfile and is installed separately by
+# build.mjs, via tauri's beforeBuildCommand below.) There are no submodules to
+# fetch any more -- the monorepo vendors what used to be libs/drop-base.
 echo ">>> Installing dependencies..."
-pnpm install
+git config --global --add safe.directory /workspace
+cd /workspace
+pnpm install --filter drop-app
+cd "/workspace/$APP_DIR"
 
-# ── 3. Build the frontend(s) + Tauri AppImage bundle ──────────────────────────
+# ── 2. Build the frontend(s) + Tauri AppImage bundle ──────────────────────────
 # beforeBuildCommand ("pnpm build") builds the Nuxt view into ./.output,
 # then tauri-bundler packages everything into an AppImage.
 echo ">>> Running tauri build (appimage only)..."
 pnpm tauri build --bundles appimage
 
-# ── 4. Inject vendored umu-run/winetricks (Steam Deck etc. support) ───────────
+# ── 3. Inject vendored umu-run/winetricks (Steam Deck etc. support) ───────────
 # These have no distro package manager to install umu-launcher/winetricks on,
 # so we bundle known-working copies as a fallback. Placed in their own
 # directory (not usr/bin) so they don't get caught up in the sanitize step
@@ -82,10 +94,11 @@ rm -f "$APPIMAGE"
 ARCH=x86_64 appimagetool squashfs-root "$APPIMAGE"
 rm -rf squashfs-root
 
-# ── 5. Copy the result out to the repo root, named after the commit ───────────
+# ── 4. Copy the result out to the repo root, named after the commit ───────────
 SHORT_SHA=$(git rev-parse --short HEAD)
 OUTPUT_NAME="Drop Desktop Client_${SHORT_SHA}_amd64.AppImage"
-cp "$APPIMAGE" "./$OUTPUT_NAME"
+# The repo root, not desktop/ -- that's where CI globs for the artifact.
+cp "$APPIMAGE" "$REPO_ROOT/$OUTPUT_NAME"
 
 echo ""
 echo "Done: $OUTPUT_NAME"

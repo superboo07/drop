@@ -8,18 +8,14 @@ Drop Desktop Client — the desktop app for [Drop](https://github.com/Drop-OSS/d
 
 ## Setup
 
-This repo uses git submodules — always run this after cloning or pulling submodule changes:
-```
-git submodule update --init --recursive
-```
-`libs/drop-base` (shared Nuxt UI layer/components) and `src-tauri/tailscale/libtailscale` are submodules. `libs/drop-base` is required for the build to succeed at all (`build.mjs` checks for it and throws if missing). `src-tauri/tailscale` is vendored but currently not wired into the workspace/build — it's not a dependency of anything and isn't compiled by a normal build.
+This app lives at `desktop/` inside the Drop monorepo. The shared Nuxt UI layer/components it used to pull in as the `libs/drop-base` submodule is now a sibling directory in the same repo, `libraries/base`, which `main/nuxt.config.ts` extends via a relative path (`../../libraries/base`) — so anything that builds this app needs the whole repo present, not just `desktop/`. There are no submodules any more.
 
 ## Commands
 
-- Install deps: `pnpm install` (root) — this only installs the root/Tauri CLI deps; `build.mjs` handles installing each frontend view's own deps.
+- Install deps: `pnpm install --filter drop-app` from the *monorepo* root — `desktop/` is a workspace member, so the install runs from one level up. This only installs the Tauri CLI deps; `build.mjs` handles installing each frontend view's own deps.
 - Dev: `pnpm tauri dev` (NVIDIA/Linux users: use `./nvidia-prop-dev.sh` instead, which sets `GSK_RENDERER=ngl`)
 - Build: `pnpm tauri build` (runs `beforeBuildCommand: pnpm build` first, which runs `build.mjs`)
-- Frontend-only build: `pnpm build` (runs `build.mjs`, which installs deps and runs `nuxt generate` for each view directory under repo root that has a `package.json`, currently just `main/`, copying output into `.output/<view>`)
+- Frontend-only build: `pnpm build` (runs `build.mjs`, which installs deps and runs `nuxt generate` for each view directory under `desktop/` that has a `package.json`, currently just `main/`, copying output into `.output/<view>`)
 - Frontend typecheck: `pnpm -C main typecheck` (or `pnpm --prefix main typecheck`)
 - Rust lint: `cargo clippy --manifest-path ./src-tauri/Cargo.toml` (this is what CI runs, on Rust nightly)
 - Logging: set `RUST_LOG=[debug,info,warn,error]` env var, e.g. `RUST_LOG=debug pnpm tauri dev`
@@ -30,19 +26,19 @@ This workspace has **no `[workspace.dependencies]` table** — don't add `dep = 
 
 `cargo check`/`clippy` on a single sub-crate in isolation (`cargo check -p database`) can show spurious errors — e.g. missing derive macros — that don't reflect a real problem, because feature unification across the workspace (e.g. `serde`'s `derive` feature, enabled by another crate) isn't applied. Always verify against the full workspace manifest (`cargo check --manifest-path ./src-tauri/Cargo.toml`, or `cargo clippy` per the Commands section above) before concluding something is broken.
 
-**Builds (not lint/typecheck) must run inside a Dockerfile, not on the host.** Use `bash build_appimage.sh` (`Dockerfile.build`) for actual build artifacts rather than installing/running the Rust or Node toolchains directly on the host. This applies to Drop's other repo (the server) too. Lightweight verification of an edit — `cargo check`, `cargo clippy`, `pnpm -C main typecheck` — is fine to run on the host if the toolchain is already there.
+**Builds (not lint/typecheck) must run inside a Dockerfile, not on the host.** Use `bash desktop/build_appimage.sh` (`desktop/Dockerfile.build`) for actual build artifacts rather than installing/running the Rust or Node toolchains directly on the host. This applies to the server side of the monorepo too. Lightweight verification of an edit — `cargo check`, `cargo clippy`, `pnpm -C main typecheck` — is fine to run on the host if the toolchain is already there.
 
 **Never run `nuxt dev`/`pnpm -C main dev` on the host to eyeball a page.** It writes into `main/.nuxt` and can leave `main/.output/public` with dev-mode HTML (`@vite/client` script tags, absolute host `node_modules` paths instead of hashed prod assets) — this happened once (leftover dev server from a verification step corrupted the AppImage's main window, which then failed to load with `AssetNotFound` errors). `build.mjs` copies `main/.output/public` straight into the AppImage/bundle with no sanity check, so this silently ships. If you must run a dev server for verification, kill it and confirm with `ps aux | grep nuxt` (or equivalent) that it's actually gone — don't trust a bare `pkill` exit code — then `rm -rf main/.nuxt main/.output .output` before the next real build.
 
 ### AppImage builds (Linux)
 
-`bash build_appimage.sh` builds a Docker image from `Dockerfile.build` and runs the whole build inside a container (no host Rust/Node install needed). See "AppImage gotchas" below before touching anything that spawns subprocesses or affects the Linux bundle target.
+`bash desktop/build_appimage.sh` builds a Docker image from `desktop/Dockerfile.build` and runs the whole build inside a container (no host Rust/Node install needed). It mounts the monorepo root, since both the pnpm workspace root and `libraries/base` live above `desktop/`. The finished AppImage is written to the repo root. See "AppImage gotchas" below before touching anything that spawns subprocesses or affects the Linux bundle target.
 
 ## Architecture
 
 ### Repo layout
 
-- `main/` — the Nuxt 3 frontend (the only "view" currently; `build.mjs` is written to support multiple views if more get added). Extends `libs/drop-base` via `nuxt.config.ts`'s `extends`, which is where shared components/composables (e.g. the modal stack, `createModal`/`useModalStack` in `libs/drop-base/composables/modal-stack.ts`) live. SSR is disabled (it's a Tauri webview, not a server).
+- `main/` — the Nuxt 3 frontend (the only "view" currently; `build.mjs` is written to support multiple views if more get added). Extends `libraries/base` (at the monorepo root) via `nuxt.config.ts`'s `extends`, which is where shared components/composables (e.g. the modal stack, `createModal`/`useModalStack` in `libraries/base/composables/modal-stack.ts`) live. SSR is disabled (it's a Tauri webview, not a server).
 - `src-tauri/` — the Rust backend. `src-tauri/src/` is the actual Tauri app crate (binary + commands); the rest are internal library crates in a Cargo workspace:
   - `client` — app status/state, autostart, platform compat helpers
   - `database` — the local persisted DB (see below)

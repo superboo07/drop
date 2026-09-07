@@ -11,13 +11,18 @@
 # workspace root and the .git directory both live one level up and the
 # build needs each of them - the workspace to resolve desktop/'s deps, and
 # .git for the commit hash the output is named after.
-# Output: the built .AppImage is copied to the repo root, named after the
-# commit it was built from (Drop Desktop Client_<short-sha>_amd64.AppImage,
-# matching tauri-bundler's own "{productName}_{version}_{arch}" convention
-# but with the commit hash standing in for the version) rather than the
-# tauri-bundler default (which is version-tag based) -- this is the single
-# place that naming scheme is decided, so anything invoking this script
-# (CI or otherwise) doesn't need to duplicate the logic.
+# Version: tauri.conf.json's version is a fixed release number, so on its own
+# every build claims to be that version whatever commit it came from. This
+# script stamps the commit onto it instead - <conf version>-g<short sha>, plus
+# ".dirty" when the tree had uncommitted changes to tracked files - and passes
+# that to tauri via --config, so the AppImage says exactly what it was built
+# from. tauri.conf.json itself is untouched, so other platforms' builds (which
+# have stricter version formats) are unaffected.
+# Output: the built .AppImage is copied to the repo root as
+# "Drop Desktop Client_<version>_amd64.AppImage", matching tauri-bundler's own
+# "{productName}_{version}_{arch}" convention. This is the single place that
+# naming scheme is decided, so anything invoking this script doesn't need to
+# duplicate the logic.
 
 set -euo pipefail
 
@@ -105,7 +110,29 @@ if [ -n "${DROP_FAST:-}" ]; then
     export CARGO_TARGET_DIR=/cargo-target-fast
 fi
 
-# ── 1. Install desktop deps (tauri CLI) from the workspace root ─────────────
+# ── 1. Work out the version to stamp into this build ──────────────────────────
+# The base comes from tauri.conf.json (the release number the branch is
+# working towards); the commit is appended as a semver prerelease, which keeps
+# it a valid version for tauri while making every build self-identifying.
+#
+# Dirtiness counts tracked changes only. The repo root accumulates untracked
+# build output - previous AppImages, drop-custom.tar.gz - so including
+# untracked files would mark essentially every build dirty and tell you
+# nothing.
+git config --global --add safe.directory /workspace
+BASE_VERSION="$(node -p "require('/workspace/$APP_DIR/src-tauri/tauri.conf.json').version")"
+GIT_SHA="$(git -C /workspace rev-parse --short HEAD)"
+if git -C /workspace diff --quiet HEAD --; then
+    GIT_DIRTY=""
+else
+    GIT_DIRTY=".dirty"
+fi
+# The "g" prefix is git describe's convention, and it also keeps the
+# identifier from ever being all-digits, which semver would reject.
+APP_VERSION="${BASE_VERSION}-g${GIT_SHA}${GIT_DIRTY}"
+echo ">>> Building version $APP_VERSION"
+
+# ── 2. Install desktop deps (tauri CLI) from the workspace root ─────────────
 # desktop/ is a member of the monorepo's pnpm workspace, so the install has to
 # run from the root. --filter keeps it to this package rather than also
 # installing server/ and sites/, which the AppImage build doesn't need. (The
@@ -113,18 +140,19 @@ fi
 # build.mjs, via tauri's beforeBuildCommand below.) There are no submodules to
 # fetch any more -- the monorepo vendors what used to be libs/drop-base.
 echo ">>> Installing dependencies..."
-git config --global --add safe.directory /workspace
 cd /workspace
 pnpm install --filter drop-app
 cd "/workspace/$APP_DIR"
 
-# ── 2. Build the frontend(s) + Tauri AppImage bundle ──────────────────────────
+# ── 3. Build the frontend(s) + Tauri AppImage bundle ──────────────────────────
 # beforeBuildCommand ("pnpm build") builds the Nuxt view into ./.output,
-# then tauri-bundler packages everything into an AppImage.
+# then tauri-bundler packages everything into an AppImage. --config overrides
+# just the version for this build; it's merged over tauri.conf.json rather
+# than editing it, so nothing has to be reverted afterwards.
 echo ">>> Running tauri build (appimage only)..."
-pnpm tauri build --bundles appimage
+pnpm tauri build --bundles appimage --config "{\"version\": \"$APP_VERSION\"}"
 
-# ── 3. Inject vendored umu-run/winetricks (Steam Deck etc. support) ───────────
+# ── 4. Inject vendored umu-run/winetricks (Steam Deck etc. support) ───────────
 # These have no distro package manager to install umu-launcher/winetricks on,
 # so we bundle known-working copies as a fallback. Placed in their own
 # directory (not usr/bin) so they don't get caught up in the sanitize step
@@ -168,12 +196,11 @@ echo ">>> Repacking AppImage..."
 rm -f "$APPIMAGE"
 ARCH=x86_64 appimagetool "$APPDIR" "$APPIMAGE"
 
-# ── 4. Copy the result out to the repo root, named after the commit ───────────
-SHORT_SHA=$(git rev-parse --short HEAD)
+# ── 5. Copy the result out to the repo root ───────────────────────────────────
 # Fast builds are tagged so they can't be confused with a shippable artifact
-# built from the same commit. CI never sets DROP_FAST, so its glob is unchanged.
-OUTPUT_NAME="Drop Desktop Client_${SHORT_SHA}${DROP_FAST:+-fast}_amd64.AppImage"
-# The repo root, not desktop/ -- that's where CI globs for the artifact.
+# built from the same commit.
+OUTPUT_NAME="Drop Desktop Client_${APP_VERSION}${DROP_FAST:+-fast}_amd64.AppImage"
+# The repo root, not desktop/, so built AppImages all collect in one place.
 cp "$APPIMAGE" "$REPO_ROOT/$OUTPUT_NAME"
 
 echo ""

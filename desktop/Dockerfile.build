@@ -20,6 +20,17 @@ RUN sed -i \
         -e 's|http://security.ubuntu.com/ubuntu|http://old-releases.ubuntu.com/ubuntu|g' \
         /etc/apt/sources.list
 
+# Pinned versions of everything this image fetches by URL, hoisted out of the
+# RUN lines below so there's one obvious place to bump them and nothing is
+# spelled out twice inside a curl invocation. Override at build time with
+# `docker build --build-arg UMU_VERSION=x.y.z`.
+ARG NODE_VERSION=20.20.2
+ARG PNPM_VERSION=10
+# Proton launcher bundled into the AppImage - see the vendoring step below.
+ARG UMU_VERSION=1.4.0
+# Winetricks releases are dated, not semver.
+ARG WINETRICKS_VERSION=20260125
+
 ENV DEBIAN_FRONTEND=noninteractive \
     APPIMAGE_EXTRACT_AND_RUN=1 \
     CARGO_HOME=/root/.cargo \
@@ -44,10 +55,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 
 # Node + pnpm — installed from upstream tarball rather than nodesource, since
 # nodesource's setup script doesn't recognize EOL codenames like mantic.
-RUN curl -fsSL https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz \
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
         | tar -xJ -C /usr/local --strip-components=1 -f - \
     && corepack enable \
-    && corepack prepare pnpm@10 --activate
+    && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 
 # Vendored umu-run + winetricks, injected into the AppImage by
 # build_appimage.sh (see the post-processing step there). This is what
@@ -59,12 +70,12 @@ RUN curl -fsSL https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.xz \
 # Proton/Wine build the game itself is configured to use.
 RUN mkdir -p /opt/drop-vendor \
     && curl -fsSL -o /tmp/umu.tar \
-        https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.4.0/umu-launcher-1.4.0-zipapp.tar \
+        "https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_VERSION}/umu-launcher-${UMU_VERSION}-zipapp.tar" \
     && tar -xf /tmp/umu.tar -C /tmp \
     && cp /tmp/umu/umu-run /opt/drop-vendor/umu-run \
     && rm -rf /tmp/umu.tar /tmp/umu \
     && curl -fsSL -o /opt/drop-vendor/winetricks \
-        https://raw.githubusercontent.com/Winetricks/winetricks/20260125/src/winetricks \
+        "https://raw.githubusercontent.com/Winetricks/winetricks/${WINETRICKS_VERSION}/src/winetricks" \
     && chmod +x /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks
 
 # appimagetool, used by build_appimage.sh to repack the AppImage after

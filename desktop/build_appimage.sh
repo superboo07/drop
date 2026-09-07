@@ -134,17 +134,39 @@ pnpm tauri build --bundles appimage
 # Honour CARGO_TARGET_DIR (fast mode points it at a volume); tauri-bundler
 # writes its bundles under whichever target directory cargo used.
 TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/src-tauri/target}"
-APPIMAGE=$(ls "$TARGET_DIR"/release/bundle/appimage/*.AppImage)
+BUNDLE_DIR="$TARGET_DIR/release/bundle/appimage"
+
+# tauri-bundler names its output "{productName}_{version}_{arch}.AppImage", so
+# the name has spaces in it and changes whenever the version in
+# tauri.conf.json does - hence globbing for it rather than spelling it out.
+# Insist on exactly one match: leftovers from an older version would otherwise
+# be picked up (or silently concatenated) and packaged as this build's output.
+shopt -s nullglob
+appimages=("$BUNDLE_DIR"/*.AppImage)
+shopt -u nullglob
+if [ "${#appimages[@]}" -ne 1 ]; then
+    echo "error: expected exactly one .AppImage in $BUNDLE_DIR, found ${#appimages[@]}" >&2
+    [ "${#appimages[@]}" -eq 0 ] || printf '  %s\n' "${appimages[@]}" >&2
+    echo "delete the stale ones and re-run, or wipe the bundle directory." >&2
+    exit 1
+fi
+APPIMAGE="${appimages[0]}"
+
+# Unpack next to the bundle rather than into the repo, so a build that dies
+# midway doesn't leave a root-owned squashfs-root/ behind in desktop/ - and
+# so the (large) extracted tree lands on the same filesystem it came from.
+WORK_DIR="$(mktemp -d "$BUNDLE_DIR/.repack.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
+APPDIR="$WORK_DIR/squashfs-root"
+
 echo ">>> Injecting vendored umu-run/winetricks..."
-rm -rf squashfs-root
-"$APPIMAGE" --appimage-extract >/dev/null
-mkdir -p squashfs-root/usr/libexec/drop-tools
-cp /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks squashfs-root/usr/libexec/drop-tools/
+(cd "$WORK_DIR" && "$APPIMAGE" --appimage-extract >/dev/null)
+mkdir -p "$APPDIR/usr/libexec/drop-tools"
+cp /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks "$APPDIR/usr/libexec/drop-tools/"
 
 echo ">>> Repacking AppImage..."
 rm -f "$APPIMAGE"
-ARCH=x86_64 appimagetool squashfs-root "$APPIMAGE"
-rm -rf squashfs-root
+ARCH=x86_64 appimagetool "$APPDIR" "$APPIMAGE"
 
 # ── 4. Copy the result out to the repo root, named after the commit ───────────
 SHORT_SHA=$(git rev-parse --short HEAD)

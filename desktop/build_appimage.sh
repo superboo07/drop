@@ -30,9 +30,26 @@ cd "$SCRIPT_DIR"
 
 BUILDER_IMAGE="drop-app-builder"
 
+# ── Fast mode (DROP_FAST=1) ───────────────────────────────────────────────────
+# Release builds here use `lto = true` + `codegen-units = 1` (src-tauri's
+# [profile.release]), which is most of a clean build's wall time and buys
+# nothing when you just want to click around in the app. DROP_FAST=1 overrides
+# those through cargo's env-var profile overrides, so the checked-in profile -
+# and therefore what CI and releases produce - is untouched.
+#
+# The overrides change every crate's fingerprint, so a fast build and a real
+# build would otherwise invalidate each other's artifacts on every switch.
+# Fast mode gets its own target directory (a named volume) to keep the two
+# incremental caches side by side.
+
 # ── Docker wrapper ─────────────────────────────────────────────────────────────
 # When invoked on the host, build the image then re-run this script inside it.
 if [ -z "${DROP_IN_DOCKER:-}" ]; then
+    if [ -n "${DROP_FAST:-}" ]; then
+        echo ">>> DROP_FAST set: thin LTO, parallel codegen, separate target dir."
+        echo ">>> Dev builds only - use a normal build for anything you ship."
+    fi
+
     echo ">>> Building Docker builder image..."
     docker build -f Dockerfile.build -t "$BUILDER_IMAGE" .
 
@@ -44,14 +61,23 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     # AppImage build wipes whatever the host had installed (leaving, say, the
     # server workspace with no dependencies) and drops a .pnpm-store inside the
     # repo. Volumes also let the deps survive between builds.
+    # The cargo registry lives in the container's own filesystem, which --rm
+    # throws away, so without a volume here every build re-downloads and
+    # re-unpacks the whole dependency tree before it can even start compiling.
+    # (The build directory itself doesn't need one - it's src-tauri/target on
+    # the bind mount, so it already persists on the host.)
     echo ">>> Running build inside Docker..."
     docker run --rm \
         -e DROP_IN_DOCKER=1 \
+        -e DROP_FAST \
         -e npm_config_store_dir=/pnpm-store \
         -v "$REPO_ROOT":/workspace \
         -v drop-appimage-pnpm-store:/pnpm-store \
         -v drop-appimage-node-modules:/workspace/node_modules \
         -v drop-appimage-main-node-modules:"/workspace/$APP_DIR/main/node_modules" \
+        -v drop-appimage-cargo-registry:/root/.cargo/registry \
+        -v drop-appimage-cargo-git:/root/.cargo/git \
+        -v drop-appimage-target-fast:/cargo-target-fast \
         -w /workspace \
         "$BUILDER_IMAGE" \
         bash "$APP_DIR/build_appimage.sh"
@@ -67,6 +93,17 @@ fi
 # install` inside main/ (triggered by `pnpm tauri build`'s beforeBuildCommand
 # below) needs it too, not just the install on the next line.
 export CI=true
+
+# See the DROP_FAST notes above. These are cargo's documented env overrides for
+# [profile.release] keys, so nothing in Cargo.toml changes - `panic = "abort"`
+# and the rest of the profile still apply, and an unset DROP_FAST builds
+# exactly what it always did.
+if [ -n "${DROP_FAST:-}" ]; then
+    export CARGO_PROFILE_RELEASE_LTO=thin
+    export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+    export CARGO_PROFILE_RELEASE_INCREMENTAL=true
+    export CARGO_TARGET_DIR=/cargo-target-fast
+fi
 
 # ── 1. Install desktop deps (tauri CLI) from the workspace root ─────────────
 # desktop/ is a member of the monorepo's pnpm workspace, so the install has to
@@ -94,7 +131,10 @@ pnpm tauri build --bundles appimage
 # that strips the AppImage's usr/bin from PATH before spawning external
 # tools (see utils::external_open::sanitize_external_command) -- that step
 # re-adds this specific directory back.
-APPIMAGE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage)
+# Honour CARGO_TARGET_DIR (fast mode points it at a volume); tauri-bundler
+# writes its bundles under whichever target directory cargo used.
+TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/src-tauri/target}"
+APPIMAGE=$(ls "$TARGET_DIR"/release/bundle/appimage/*.AppImage)
 echo ">>> Injecting vendored umu-run/winetricks..."
 rm -rf squashfs-root
 "$APPIMAGE" --appimage-extract >/dev/null
@@ -108,7 +148,9 @@ rm -rf squashfs-root
 
 # ── 4. Copy the result out to the repo root, named after the commit ───────────
 SHORT_SHA=$(git rev-parse --short HEAD)
-OUTPUT_NAME="Drop Desktop Client_${SHORT_SHA}_amd64.AppImage"
+# Fast builds are tagged so they can't be confused with a shippable artifact
+# built from the same commit. CI never sets DROP_FAST, so its glob is unchanged.
+OUTPUT_NAME="Drop Desktop Client_${SHORT_SHA}${DROP_FAST:+-fast}_amd64.AppImage"
 # The repo root, not desktop/ -- that's where CI globs for the artifact.
 cp "$APPIMAGE" "$REPO_ROOT/$OUTPUT_NAME"
 

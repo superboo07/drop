@@ -1,0 +1,49 @@
+{
+  // Both builds run entirely inside Docker, per CLAUDE.md - nothing here needs
+  // a Rust or Node toolchain on the host.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build AppImage (fast)",
+      "detail": "Desktop client AppImage, optimised for build time. Dev/testing only.",
+      "type": "shell",
+      "command": "DROP_FAST=1 bash desktop/build_appimage.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Build AppImage (release)",
+      "detail": "Desktop client AppImage with the real release profile. Use this for anything you ship.",
+      "type": "shell",
+      "command": "bash desktop/build_appimage.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Build server image",
+      "detail": "docker build of the server image as drop:custom, then saves it to drop-custom.tar.gz.",
+      "type": "shell",
+      "command": "bash build-docker-image.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}

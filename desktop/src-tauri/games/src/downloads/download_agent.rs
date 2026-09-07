@@ -578,7 +578,9 @@ impl GameDownloadAgent {
         // that happens after a chunk's bytes are already written to disk.
         // This also records a client-computed hash as a fallback baseline for
         // uninstall verification when no server hash is known for a file.
-        self.verify_installed_files(base_path)?;
+        if !self.verify_installed_files(base_path).await? {
+            return Ok(false);
+        }
 
         Ok(true)
     }
@@ -587,17 +589,44 @@ impl GameDownloadAgent {
     // chunk-checksum error (rather than a soft `Ok(false)`) reuses the app's
     // existing corrupt-download UX, and clearing just the affected chunks'
     // completion state means a retry only re-fetches what's actually broken.
-    fn verify_installed_files(&self, base_path: &Path) -> Result<(), ApplicationDownloadError> {
+    //
+    // Returns whether verification actually ran to completion: `Ok(false)`
+    // means the user paused/cancelled partway through, which is not an error.
+    // Hashing a whole install can take minutes, so this has to honour the
+    // control flag between files - otherwise the download manager's stop
+    // handling gives up waiting on us and the download can only be halted by
+    // killing the app.
+    async fn verify_installed_files(
+        &self,
+        base_path: &Path,
+    ) -> Result<bool, ApplicationDownloadError> {
         let installed_files = self.dropdata.get_installed_files();
         let mut corrupted_chunk_ids: HashSet<String> = HashSet::new();
 
         for (relative_path, record) in installed_files.iter() {
+            if self.control_flag.get() == DownloadThreadControlFlag::Stop {
+                info!(
+                    "verification of {} interrupted by a stop signal",
+                    self.metadata.id
+                );
+                self.dropdata.write();
+                return Ok(false);
+            }
+
             let file_path = base_path.join(relative_path);
-            let hash = match hash_file(&file_path) {
-                Ok(hash) => hash,
+            // Hashing is CPU- and IO-bound and completely synchronous, so it
+            // goes on the blocking pool rather than parking an async runtime
+            // worker for the duration.
+            let hash_path = file_path.clone();
+            let hash = match tokio::task::spawn_blocking(move || hash_file(&hash_path)).await {
+                Ok(Ok(hash)) => hash,
+                Ok(Err(e)) => {
+                    warn!("could not hash installed file {}: {e}", file_path.display());
+                    continue;
+                }
                 Err(e) => {
                     warn!(
-                        "could not hash installed file {}: {e}",
+                        "hashing task for installed file {} failed: {e}",
                         file_path.display()
                     );
                     continue;
@@ -613,16 +642,18 @@ impl GameDownloadAgent {
                 );
                 let _ = remove_file(&file_path);
 
-                let dl_info = lock!(self.dl_info);
-                if let Some(dl_info) = dl_info.as_ref() {
-                    for manifest in dl_info.manifests.values() {
-                        for (chunk_id, chunk_data) in manifest.chunks.iter() {
-                            if chunk_data
-                                .files
-                                .iter()
-                                .any(|f| &f.filename == relative_path)
-                            {
-                                corrupted_chunk_ids.insert(chunk_id.clone());
+                {
+                    let dl_info = lock!(self.dl_info);
+                    if let Some(dl_info) = dl_info.as_ref() {
+                        for manifest in dl_info.manifests.values() {
+                            for (chunk_id, chunk_data) in manifest.chunks.iter() {
+                                if chunk_data
+                                    .files
+                                    .iter()
+                                    .any(|f| &f.filename == relative_path)
+                                {
+                                    corrupted_chunk_ids.insert(chunk_id.clone());
+                                }
                             }
                         }
                     }
@@ -645,7 +676,7 @@ impl GameDownloadAgent {
         }
 
         self.dropdata.write();
-        Ok(())
+        Ok(true)
     }
 
     #[allow(dead_code)]

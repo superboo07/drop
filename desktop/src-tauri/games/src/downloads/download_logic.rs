@@ -157,6 +157,20 @@ pub async fn download_game_chunk(
             .map_err(|_| {
                 io::Error::new(io::ErrorKind::TimedOut, "stalled while downloading chunk")
             })??;
+            // A zero-length read is EOF, not a stall: the response body was
+            // shorter than the manifest said this file would be. Without this
+            // the loop spins forever at 100% CPU waiting for bytes that are
+            // never coming.
+            if amount == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!(
+                        "chunk {chunk_id} ended {remaining} bytes short of the expected length for {}",
+                        file.filename
+                    ),
+                )
+                .into());
+            }
             download_progress.add(amount);
             remaining -= amount;
 

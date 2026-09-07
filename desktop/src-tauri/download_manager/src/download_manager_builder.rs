@@ -1,4 +1,3 @@
-use core::panic;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -122,14 +121,12 @@ impl DownloadManagerBuilder {
         *lock!(self.status) = status;
     }
 
-    async fn remove_and_cleanup_front_download(
-        &mut self,
-        meta: &DownloadableMetadata,
-    ) -> DownloadAgent {
+    async fn remove_and_cleanup_front_download(&mut self, meta: &DownloadableMetadata) {
         self.download_queue.pop_front();
-        let download_agent = self.download_agent_registry.remove(meta).unwrap();
+        if self.download_agent_registry.remove(meta).is_none() {
+            warn!("no download agent registered for {meta:?} while cleaning it up");
+        }
         self.cleanup_current_download().await;
-        download_agent
     }
 
     // CAREFUL WITH THIS FUNCTION
@@ -162,7 +159,17 @@ impl DownloadManagerBuilder {
                 if let Ok(result) = result {
                     return result;
                 };
-                panic!("failed to cleanup download: timeout after 4 seconds");
+
+                // The download thread didn't acknowledge the stop in time.
+                // That's not fatal: the tail of a download does work that
+                // can't be interrupted instantly (finishing an in-flight
+                // chunk, the completion round-trip to the server), so we let
+                // it run itself out detached and report that the stop wasn't
+                // clean. This used to panic, which - with `panic = "abort"` -
+                // killed the entire app, most often right as a download was
+                // finishing.
+                error!("timed out waiting for the download thread to stop, leaving it to finish detached");
+                return false;
             };
         }
 
@@ -399,9 +406,12 @@ impl DownloadManagerBuilder {
         let queue = &self.download_queue.read();
         let queue_objs = queue
             .iter()
-            .map(|key| {
-                let val = self.download_agent_registry.get(key).unwrap();
-                QueueUpdateEventQueueData {
+            // The queue and the registry are meant to stay in lockstep, but a
+            // desync here is a cosmetic problem, not a reason to take the
+            // whole app down with an unwrap on a `panic = "abort"` build.
+            .filter_map(|key| {
+                let val = self.download_agent_registry.get(key)?;
+                Some(QueueUpdateEventQueueData {
                     meta: DownloadableMetadata::clone(key),
                     status: val.status(),
                     dl_progress: val.dl_progress().get_progress(),
@@ -410,7 +420,7 @@ impl DownloadManagerBuilder {
                     disk_progress: val.disk_progress().get_progress(),
                     disk_current: val.disk_progress().sum(),
                     disk_max: val.disk_progress().get_max(),
-                }
+                })
             })
             .collect();
 

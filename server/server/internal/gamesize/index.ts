@@ -29,6 +29,18 @@ class GameSizeManager {
    * Gets the size of the game to the user:
    * - installSize: size on disk after install
    * - downloadSize: how many bytes are downloaded (but not necessarily stored)
+   *
+   * `previousId` is what the user already has installed, and only affects
+   * downloadSize. installSize deliberately always comes from the full
+   * manifest: how much disk the version occupies once installed doesn't
+   * depend on how much of it happens to already be there.
+   *
+   * (createDownloadManifestDetails' own installSize *is* delta-relative,
+   * because the client uses it for the download's disk-progress bar and
+   * free-space check - i.e. "bytes this download will write", not "size of
+   * the installed game". Taking that number at face value here is what made
+   * the install dialog report 0.0 B for a version that was already
+   * installed: every file was already present, so nothing was counted.)
    */
   async getVersionSize(
     versionId: string,
@@ -38,13 +50,14 @@ class GameSizeManager {
     if (await this.gameVersionsSizesCache.has(key))
       return await this.gameVersionsSizesCache.get(key);
     try {
-      const { downloadSize, installSize } = await createDownloadManifestDetails(
-        versionId,
-        previousId,
-      );
+      const full = await createDownloadManifestDetails(versionId);
+      const downloadSize = previousId
+        ? (await createDownloadManifestDetails(versionId, previousId))
+            .downloadSize
+        : full.downloadSize;
       const result = {
         downloadSize,
-        installSize,
+        installSize: full.installSize,
         versionId,
       } satisfies GameVersionSize;
       await this.gameVersionsSizesCache.set(key, result);

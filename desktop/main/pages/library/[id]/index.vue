@@ -813,7 +813,16 @@ const currentVersionOption = computed(
 function formatVersionOptionText(index: number) {
   if (!versionOptions.value) return undefined;
   const versionOption = versionOptions.value[Math.max(index, 0)];
-  const template = `${versionOption.displayName || versionOption.versionPath} on ${versionOption.platform}, ${formatKilobytes(versionOption.size.installSize / 1024)}B`;
+  const { installSize, downloadSize } = versionOption.size;
+  // installSize is the whole version on disk. downloadSize is only smaller
+  // when some of it is already installed (a delta or a reinstall), which is
+  // worth calling out - otherwise it's the same download, or slightly larger
+  // because chunks are fetched whole.
+  const delta =
+    downloadSize < installSize
+      ? ` (${formatKilobytes(downloadSize / 1024)}B to download)`
+      : "";
+  const template = `${versionOption.displayName || versionOption.versionPath} on ${versionOption.platform}, ${formatKilobytes(installSize / 1024)}B${delta}`;
   if (index == -1) {
     return `Latest (${template})`;
   }

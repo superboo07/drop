@@ -6,6 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the main [Drop](https://droposs.org) monorepo — a self-hosted, DRM-free game distribution platform (think a homelab-friendly Steam/GameVault alternative). It's a pnpm workspace containing the server, the desktop client, a CLI, and several shared libraries. **Builds must run inside a Dockerfile, not on the host** — see the root `Dockerfile` and the per-package notes below; only lightweight verification (typecheck/lint/`cargo check`) is fine to run directly on the host.
 
+## Pulling in commits from upstream
+
+This checkout is a fork: `upstream` is `Drop-OSS/drop`, `origin` is the local server, and `develop` carries a long tail of fork-only commits on top of it.
+
+**"Pull in the commits from upstream" always means: cherry-pick upstream's new commits on top of `develop`, as themselves.** Do not merge, and do not rebase our commits onto upstream — rewriting or re-authoring our existing history is not wanted, and neither is a big merge commit.
+
+```bash
+git fetch upstream
+git branch -f backup/develop-pre-upstream-sync develop   # cheap escape hatch
+git cherry-pick <last-synced-upstream-commit>..upstream/develop
+```
+
+Resolve conflicts in favour of the fork's changes:
+
+- Files we deliberately deleted (e.g. the AppImage and server-image build workflows) stay deleted — take the delete on a modify/delete conflict.
+- Where we changed something upstream also touched, keep our behaviour and take only upstream's actual fix.
+- Afterwards, `git diff <backup branch> develop` should show upstream's diff and nothing of ours reverted.
+
+The lockfile usually moves during a sync, so `node_modules` is stale until `pnpm install` is run.
+
 ## Workspace layout
 
 Declared in `pnpm-workspace.yaml`: `server/`, `libraries/base/`, `sites/*`, `desktop/`.

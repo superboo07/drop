@@ -1,0 +1,51 @@
+diff --git a/openbox/event.c b/openbox/event.c
+index 5774f67d..064b4ebd 100644
+--- a/openbox/event.c
++++ b/openbox/event.c
+@@ -1337,6 +1337,46 @@ static void event_handle_client(ObClient *client, XEvent *e)
+             }
+         }
+ 
++        /* Drop's nested session: a fullscreen client asking for a new
++           geometry is telling us what it wants to be when it's windowed
++           again. Upstream throws the request away (client_try_configure
++           below forces the fullscreen area) and later restores whatever the
++           window was before it went fullscreen - so a Wine game that sends
++           its windowed size *before* dropping _NET_WM_STATE_FULLSCREEN ends
++           up the wrong size, rendering scaled with every click offset.
++           Remember the request instead. A request that just restates the
++           fullscreen geometry (Wine re-asserts it) is not a windowed size
++           and is left out. */
++        if (client->fullscreen &&
++            (e->xconfigurerequest.value_mask &
++             (CWX | CWY | CWWidth | CWHeight)))
++        {
++            Rect *pre = &client->pre_fullscreen_area;
++            Rect want;
++
++            RECT_SET(want,
++                     (e->xconfigurerequest.value_mask & CWX) ? x : pre->x,
++                     (e->xconfigurerequest.value_mask & CWY) ? y : pre->y,
++                     (e->xconfigurerequest.value_mask & CWWidth) ?
++                     w : pre->width,
++                     (e->xconfigurerequest.value_mask & CWHeight) ?
++                     h : pre->height);
++            /* Compared against the monitor directly rather than with
++               client_is_oldfullscreen, which says no for any decorated
++               window - and Wine turns decorations back on on its way out
++               of fullscreen. */
++            if (want.width > 0 && want.height > 0 &&
++                !RECT_EQUAL(want, *screen_physical_area_monitor(
++                                screen_find_monitor(&want))) &&
++                !RECT_EQUAL(want, *screen_physical_area_all_monitors()))
++            {
++                ob_debug("ConfigureRequest while fullscreen: remembering "
++                         "x %d y %d w %d h %d for when it's windowed",
++                         want.x, want.y, want.width, want.height);
++                *pre = want;
++            }
++        }
++
+         {
+             gint lw, lh;
+ 

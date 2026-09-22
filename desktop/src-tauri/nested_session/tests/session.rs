@@ -19,8 +19,8 @@ use x11rb::{
     connection::Connection,
     protocol::xproto::{
         AtomEnum, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ButtonPressEvent, ClientMessageEvent,
-        ColormapAlloc, ConnectionExt as _, CreateWindowAux, EventMask, MapState, PropMode, Screen,
-        Window, WindowClass,
+        ColormapAlloc, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask,
+        MapState, PropMode, Screen, Window, WindowClass,
     },
     rust_connection::RustConnection,
     wrapper::ConnectionExt as _,
@@ -648,4 +648,102 @@ fn an_always_on_top_window_and_the_taskbar_stay_over_a_focused_fullscreen_game()
         stacking_index(&conn, taskbar, root) > game_index,
         "the taskbar went under the focused fullscreen game"
     );
+}
+
+/// Leaving fullscreen the way Wine does it: decorations back on, the new
+/// windowed geometry requested, *then* `_NET_WM_STATE_FULLSCREEN` dropped.
+///
+/// Upstream openbox ignores a resize while the window is still fullscreen
+/// and then restores the pre-fullscreen size - for a game that started
+/// fullscreen, the whole screen. The game believes it's 800x600, renders
+/// scaled into a window that isn't, and every click lands offset. Fixed by
+/// desktop/vendor/patches/openbox-fullscreen-configure.patch; both orders
+/// are checked.
+#[test]
+fn a_game_leaving_fullscreen_gets_the_windowed_size_it_asked_for() {
+    let Some(session) = session() else {
+        return;
+    };
+    let (conn, screen) = connect(&session);
+    let root = screen.root;
+
+    for resize_first in [true, false] {
+        let window = create_window(
+            &conn,
+            root,
+            screen.root_depth,
+            screen.root_visual,
+            &CreateWindowAux::new().background_pixel(0x00ff00),
+        );
+        conn.configure_window(
+            window,
+            &ConfigureWindowAux::new()
+                .width(u32::from(ROOT_WIDTH))
+                .height(u32::from(ROOT_HEIGHT)),
+        )
+        .expect("configure_window");
+        // Wine's fullscreen window: undecorated, fullscreen before it's
+        // ever mapped.
+        let motif = atom(&conn, "_MOTIF_WM_HINTS");
+        conn.change_property32(PropMode::REPLACE, window, motif, motif, &[2, 0, 0, 0, 0])
+            .expect("set _MOTIF_WM_HINTS");
+        conn.change_property32(
+            PropMode::REPLACE,
+            window,
+            atom(&conn, "_NET_WM_STATE"),
+            AtomEnum::ATOM,
+            &[atom(&conn, "_NET_WM_STATE_FULLSCREEN")],
+        )
+        .expect("set _NET_WM_STATE");
+        conn.map_window(window).expect("map_window");
+        conn.flush().expect("flush");
+        wait_for_geometry(&conn, window, root, "fullscreen", |(x, y, w, h)| {
+            x == 0 && y == 0 && w == ROOT_WIDTH && h == ROOT_HEIGHT
+        });
+
+        conn.change_property32(PropMode::REPLACE, window, motif, motif, &[2, 0, 1, 0, 0])
+            .expect("set _MOTIF_WM_HINTS");
+        let windowed = ConfigureWindowAux::new()
+            .x(100)
+            .y(100)
+            .width(u32::from(CLIENT_WIDTH))
+            .height(u32::from(CLIENT_HEIGHT));
+        if resize_first {
+            conn.configure_window(window, &windowed)
+                .expect("configure_window");
+            send_state(
+                &conn,
+                root,
+                window,
+                STATE_REMOVE,
+                "_NET_WM_STATE_FULLSCREEN",
+            );
+        } else {
+            send_state(
+                &conn,
+                root,
+                window,
+                STATE_REMOVE,
+                "_NET_WM_STATE_FULLSCREEN",
+            );
+            conn.configure_window(window, &windowed)
+                .expect("configure_window");
+        }
+        conn.flush().expect("flush");
+
+        let order = if resize_first {
+            "resize, then leave fullscreen"
+        } else {
+            "leave fullscreen, then resize"
+        };
+        wait_for_geometry(
+            &conn,
+            window,
+            root,
+            &format!("the requested windowed size ({order})"),
+            |(_, _, w, h)| w == CLIENT_WIDTH && h == CLIENT_HEIGHT,
+        );
+        conn.destroy_window(window).expect("destroy_window");
+        conn.flush().expect("flush");
+    }
 }

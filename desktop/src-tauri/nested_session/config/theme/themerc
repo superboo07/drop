@@ -1,0 +1,89 @@
+# Openbox theme for Drop's nested session.
+#
+# Chrome is oversized on purpose: on a Steam Deck the pointer is a trackpad,
+# so small targets are hard to hit. Titlebar 34px (label 32 + padding 1 top
+# and bottom), which makes the buttons 30px square; 16px bottom grab bar;
+# 6px borders, which are also the side resize handles.
+#
+# `window.label.height` is not upstream openbox - it comes from
+# desktop/vendor/patches/openbox-min-label-height.patch. Upstream sizes the
+# buttons from the titlebar font alone.
+
+border.width: 6
+padding.width: 6
+padding.height: 1
+window.label.height: 32
+window.handle.width: 16
+window.client.padding.width: 0
+window.client.padding.height: 0
+
+window.active.border.color: #2563eb
+window.inactive.border.color: #27272a
+window.active.client.color: #2563eb
+window.inactive.client.color: #27272a
+window.active.title.separator.color: #2563eb
+window.inactive.title.separator.color: #27272a
+
+window.active.title.bg: flat solid
+window.active.title.bg.color: #2563eb
+window.inactive.title.bg: flat solid
+window.inactive.title.bg.color: #27272a
+
+window.label.text.justify: left
+window.active.label.bg: parentrelative
+window.active.label.text.color: #fafafa
+window.inactive.label.bg: parentrelative
+window.inactive.label.text.color: #a1a1aa
+
+window.active.handle.bg: flat solid
+window.active.handle.bg.color: #2563eb
+window.inactive.handle.bg: flat solid
+window.inactive.handle.bg.color: #27272a
+window.active.grip.bg: flat solid
+window.active.grip.bg.color: #1d4ed8
+window.inactive.grip.bg: flat solid
+window.inactive.grip.bg.color: #52525b
+
+window.active.button.unpressed.bg: parentrelative
+window.active.button.unpressed.image.color: #fafafa
+window.active.button.hover.bg: flat solid
+window.active.button.hover.bg.color: #3b82f6
+window.active.button.hover.image.color: #ffffff
+window.active.button.pressed.bg: flat solid
+window.active.button.pressed.bg.color: #1e40af
+window.active.button.pressed.image.color: #ffffff
+window.active.button.disabled.bg: parentrelative
+window.active.button.disabled.image.color: #93c5fd
+
+window.inactive.button.unpressed.bg: parentrelative
+window.inactive.button.unpressed.image.color: #a1a1aa
+window.inactive.button.hover.bg: flat solid
+window.inactive.button.hover.bg.color: #3f3f46
+window.inactive.button.hover.image.color: #fafafa
+window.inactive.button.pressed.bg: flat solid
+window.inactive.button.pressed.bg.color: #52525b
+window.inactive.button.pressed.image.color: #fafafa
+window.inactive.button.disabled.bg: parentrelative
+window.inactive.button.disabled.image.color: #52525b
+
+menu.border.color: #27272a
+menu.title.bg: flat solid
+menu.title.bg.color: #18181b
+menu.title.text.color: #fafafa
+menu.items.bg: flat solid
+menu.items.bg.color: #27272a
+menu.items.text.color: #fafafa
+menu.items.disabled.text.color: #71717a
+menu.items.active.bg: flat solid
+menu.items.active.bg.color: #2563eb
+menu.items.active.text.color: #fafafa
+menu.separator.color: #3f3f46
+
+osd.border.color: #27272a
+osd.bg: flat solid
+osd.bg.color: #18181b
+osd.label.text.color: #fafafa
+osd.hilight.bg: flat solid
+osd.hilight.bg.color: #2563eb
+osd.unhilight.bg: flat solid
+osd.unhilight.bg.color: #3f3f46

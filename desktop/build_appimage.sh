@@ -55,6 +55,13 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
         echo ">>> Dev builds only - use a normal build for anything you ship."
     fi
 
+    # The nested session's openbox/picom/tint2 are built by their own script
+    # (and their own, much smaller, builder image) first, so they can be
+    # iterated on without a full AppImage build. The container below only
+    # copies the result in - see step 4.
+    echo ">>> Building nested-session tools..."
+    bash "$SCRIPT_DIR/vendor/build.sh"
+
     echo ">>> Building Docker builder image..."
     docker build -f Dockerfile.build -t "$BUILDER_IMAGE" .
 
@@ -138,7 +145,9 @@ echo ">>> Building version $APP_VERSION"
 # installing server/ and sites/, which the AppImage build doesn't need. (The
 # Nuxt view under main/ has its own lockfile and is installed separately by
 # build.mjs, via tauri's beforeBuildCommand below.) There are no submodules to
-# fetch any more -- the monorepo vendors what used to be libs/drop-base.
+# fetch here -- the monorepo vendors what used to be libs/drop-base, and the
+# only submodules left (desktop/vendor) were built before the container
+# started.
 echo ">>> Installing dependencies..."
 cd /workspace
 pnpm install --filter drop-app
@@ -191,6 +200,20 @@ echo ">>> Injecting vendored umu-run/winetricks..."
 (cd "$WORK_DIR" && "$APPIMAGE" --appimage-extract >/dev/null)
 mkdir -p "$APPDIR/usr/libexec/drop-tools"
 cp /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks "$APPDIR/usr/libexec/drop-tools/"
+
+# The nested session's window manager, compositor and taskbar, as built by
+# vendor/build.sh on the host side of this script. A self-contained prefix
+# (own lib/, RUNPATH $ORIGIN/../lib), found by nested_session::tools at
+# $APPDIR/usr/libexec/drop-tools/nested-session. In a subdirectory, so the
+# PATH entry sanitize_external_command adds for drop-tools doesn't expose
+# them to games.
+echo ">>> Injecting nested-session tools..."
+NESTED_TOOLS="/workspace/$APP_DIR/vendor/out/nested-session"
+if [ ! -x "$NESTED_TOOLS/bin/openbox" ]; then
+    echo "error: $NESTED_TOOLS is missing - vendor/build.sh should have built it" >&2
+    exit 1
+fi
+cp -a "$NESTED_TOOLS" "$APPDIR/usr/libexec/drop-tools/nested-session"
 
 echo ">>> Repacking AppImage..."
 rm -f "$APPIMAGE"

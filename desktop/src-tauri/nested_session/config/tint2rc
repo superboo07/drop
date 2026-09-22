@@ -1,0 +1,94 @@
+# tint2 configuration for Drop's nested session: a taskbar and nothing else.
+#
+# It exists because a fullscreen Windows game minimises itself whenever it
+# loses activation (WM_ACTIVATEAPP under Wine), and a Steam Deck in game mode
+# has no keyboard to bring it back with. One entry per window, including
+# minimised ones; a click focuses or restores (never minimises - `toggle`,
+# not tint2's default `toggle_iconify`, so a stray tap on the game's own
+# entry doesn't hide it).
+
+#-------------------------------------
+# Backgrounds
+# 1: panel
+rounded = 0
+border_width = 0
+background_color = #18181b 100
+border_color = #000000 0
+
+# 2: task
+rounded = 0
+border_width = 0
+background_color = #3f3f46 100
+border_color = #000000 0
+
+# 3: focused task
+rounded = 0
+border_width = 0
+background_color = #2563eb 100
+border_color = #000000 0
+
+# 4: minimised task - dimmed, with a bright bar along its bottom edge
+rounded = 0
+border_width = 5
+border_sides = B
+background_color = #27272a 100
+border_color = #a1a1aa 100
+
+#-------------------------------------
+# Panel
+panel_items = T
+panel_size = 100% 40
+panel_margin = 0 0
+panel_padding = 0 0 3
+panel_background_id = 1
+panel_position = bottom center horizontal
+panel_layer = top
+panel_monitor = all
+panel_dock = 0
+wm_menu = 0
+autohide = 0
+strut_policy = follow_size
+disable_transparency = 1
+mouse_effects = 1
+mouse_hover_icon_asb = 100 0 10
+mouse_pressed_icon_asb = 100 0 0
+
+#-------------------------------------
+# Taskbar
+taskbar_mode = single_desktop
+taskbar_padding = 0 0 3
+taskbar_background_id = 0
+taskbar_active_background_id = 0
+taskbar_name = 0
+taskbar_hide_inactive_tasks = 0
+taskbar_hide_different_monitor = 0
+taskbar_hide_if_empty = 0
+# Entries divide the whole strip evenly rather than stopping at a fixed
+# width - with the usual two windows, a cap just wastes most of the bar.
+taskbar_distribute_size = 1
+taskbar_sort_order = none
+
+#-------------------------------------
+# Task
+task_text = 1
+task_icon = 1
+task_centered = 1
+task_maximum_size = 0 40
+task_padding = 10 4 8
+task_font = Sans 11
+task_font_color = #fafafa 100
+task_active_font_color = #fafafa 100
+task_iconified_font_color = #a1a1aa 100
+task_background_id = 2
+task_active_background_id = 3
+task_iconified_background_id = 4
+task_urgent_background_id = 2
+task_tooltip = 0
+
+#-------------------------------------
+# Mouse
+mouse_left = toggle
+mouse_middle = none
+mouse_right = none
+mouse_scroll_up = none
+mouse_scroll_down = none

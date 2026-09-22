@@ -39,8 +39,7 @@ static RESERVED_DISPLAYS: Mutex<BTreeSet<u32>> = Mutex::new(BTreeSet::new());
 
 /// A nested X server hosting the game and LunaTranslator.
 ///
-/// Killed on drop, which also brings down the window manager thread attached
-/// to it (its connection dies with the server).
+/// Killed on drop.
 pub struct XServer {
     pub display: String,
     display_number: u32,
@@ -130,20 +129,7 @@ impl XServer {
             .env_remove("DISPLAY");
         sanitize_external_command(&mut command);
 
-        // Tie the server's lifetime to ours at the kernel level. `Drop` only
-        // runs on a graceful exit: if Drop is SIGKILLed, panics, or is killed
-        // from a terminal, the X server would otherwise be orphaned and sit
-        // there holding a display number forever.
-        unsafe {
-            command.pre_exec(|| {
-                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
-                // Guard the race where the parent died between fork and here.
-                if libc::getppid() == 1 {
-                    libc::raise(libc::SIGTERM);
-                }
-                Ok(())
-            });
-        }
+        die_with_parent(&mut command);
 
         info!("starting nested X server on {display} ({width}x{height})");
         let child = command.spawn()?;
@@ -169,8 +155,7 @@ impl XServer {
             }
             if socket.exists() {
                 // The socket exists a moment before the server is listening
-                // on it; a short settle beats a connect-retry loop here,
-                // since the window manager's own connect retries anyway.
+                // on it; a short settle beats a connect-retry loop here.
                 sleep(Duration::from_millis(150));
                 return Ok(());
             }
@@ -180,12 +165,20 @@ impl XServer {
     }
 }
 
+impl XServer {
+    /// Whether the server has gone away underneath us - the compositor it
+    /// was nested in exiting, typically.
+    pub fn has_exited(&mut self) -> bool {
+        !matches!(self.child.try_wait(), Ok(None))
+    }
+}
+
 impl Drop for XServer {
     fn drop(&mut self) {
-        if let Err(e) = self.child.kill() {
-            warn!("failed to stop nested X server on {}: {e}", self.display);
-        }
-        let _ = self.child.wait();
+        terminate(
+            &mut self.child,
+            &format!("nested X server on {}", self.display),
+        );
         release_display_number(self.display_number);
         info!("nested X server on {} stopped", self.display);
     }
@@ -234,10 +227,64 @@ fn find_binary(name: &str) -> Option<PathBuf> {
         .find(|candidate| is_executable(candidate))
 }
 
-fn is_executable(path: &Path) -> bool {
+pub(crate) fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
     std::fs::metadata(path)
         .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
+}
+
+/// How long a child gets to exit on SIGTERM before it's SIGKILLed.
+const TERMINATE_GRACE: Duration = Duration::from_secs(2);
+
+/// Stops a child politely: SIGTERM, then SIGKILL if it hasn't gone after
+/// `TERMINATE_GRACE`. Not `Child::kill` straight away - that's SIGKILL, and
+/// an X server killed that way leaves its `/tmp/.X<n>-lock` and socket
+/// behind, which permanently takes that display number out of the pool
+/// `reserve_display_number` picks from.
+pub(crate) fn terminate(child: &mut Child, what: &str) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return;
+    }
+    if let Ok(pid) = libc::pid_t::try_from(child.id()) {
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
+        let deadline = Instant::now() + TERMINATE_GRACE;
+        while Instant::now() < deadline {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            sleep(Duration::from_millis(20));
+        }
+        warn!("{what} ignored SIGTERM; killing it");
+    }
+    if let Err(e) = child.kill() {
+        warn!("failed to stop {what}: {e}");
+    }
+    let _ = child.wait();
+}
+
+/// Ties a child's lifetime to ours at the kernel level. `Drop` only runs on a
+/// graceful exit: if Drop is SIGKILLed, panics, or is killed from a terminal,
+/// the X server and the tools in it would otherwise be orphaned, the server
+/// holding a display number forever.
+///
+/// PR_SET_PDEATHSIG fires when the *thread* that forked the child exits, not
+/// the process. Anything spawned with this must be spawned from a thread that
+/// lives as long as the child should - which is why the whole session is run
+/// from its own thread (see `NestedSession::start`) rather than from whatever
+/// thread asked for it.
+pub(crate) fn die_with_parent(command: &mut Command) {
+    unsafe {
+        command.pre_exec(|| {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+            // Guard the race where the parent died between fork and here.
+            if libc::getppid() == 1 {
+                libc::raise(libc::SIGTERM);
+            }
+            Ok(())
+        });
+    }
 }

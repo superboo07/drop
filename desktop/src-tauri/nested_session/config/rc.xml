@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Openbox configuration for Drop's nested session.
+
+  Floating on purpose - on a controller/trackpad, windows the user positions
+  beat any layout a WM picks. Everything not set here is openbox's default.
+-->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>20</screen_edge_strength>
+  </resistance>
+
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+    <focusLast>yes</focusLast>
+  </focus>
+
+  <placement>
+    <policy>Smart</policy>
+    <center>yes</center>
+    <monitor>Primary</monitor>
+  </placement>
+
+  <theme>
+    <name>Drop</name>
+    <!-- Label, iconify, maximize, close. -->
+    <titleLayout>LIMC</titleLayout>
+    <keepBorder>yes</keepBorder>
+    <animateIconify>no</animateIconify>
+    <font place="ActiveWindow">
+      <name>Sans</name>
+      <size>11</size>
+      <weight>Bold</weight>
+    </font>
+    <font place="InactiveWindow">
+      <name>Sans</name>
+      <size>11</size>
+      <weight>Bold</weight>
+    </font>
+    <font place="MenuHeader"><name>Sans</name><size>11</size></font>
+    <font place="MenuItem"><name>Sans</name><size>11</size></font>
+    <font place="ActiveOnScreenDisplay"><name>Sans</name><size>11</size></font>
+    <font place="InactiveOnScreenDisplay"><name>Sans</name><size>11</size></font>
+  </theme>
+
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+    <names><name>Drop</name></names>
+    <popupTime>0</popupTime>
+  </desktops>
+
+  <resize>
+    <drawContents>yes</drawContents>
+    <popupShow>Never</popupShow>
+  </resize>
+
+  <keyboard>
+    <!-- A way out of a game that holds a pointer grab and swallows titlebar
+         clicks. Super rather than Alt so games keep Alt+Tab. -->
+    <keybind key="W-Tab">
+      <action name="NextWindow">
+        <dialog>no</dialog>
+        <bar>no</bar>
+        <raise>yes</raise>
+      </action>
+    </keybind>
+  </keyboard>
+
+  <mouse>
+    <dragThreshold>3</dragThreshold>
+    <doubleClickTime>300</doubleClickTime>
+    <screenEdgeWarpTime>0</screenEdgeWarpTime>
+
+    <context name="Frame">
+      <mousebind button="A-Left" action="Press">
+        <action name="Focus"/><action name="Raise"/>
+      </mousebind>
+      <mousebind button="A-Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+
+    <context name="Titlebar">
+      <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind>
+    </context>
+
+    <context name="Titlebar Top Right Bottom Left TLCorner TRCorner BRCorner BLCorner">
+      <mousebind button="Left" action="Press">
+        <action name="Focus"/><action name="Raise"/><action name="Unshade"/>
+      </mousebind>
+    </context>
+
+    <context name="Top">
+      <mousebind button="Left" action="Drag"><action name="Resize"><edge>top</edge></action></mousebind>
+    </context>
+    <context name="Left">
+      <mousebind button="Left" action="Drag"><action name="Resize"><edge>left</edge></action></mousebind>
+    </context>
+    <context name="Right">
+      <mousebind button="Left" action="Drag"><action name="Resize"><edge>right</edge></action></mousebind>
+    </context>
+    <context name="Bottom">
+      <mousebind button="Left" action="Drag"><action name="Resize"><edge>bottom</edge></action></mousebind>
+    </context>
+    <context name="TRCorner BRCorner TLCorner BLCorner">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Middle" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+    </context>
+
+    <context name="Close">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Click"><action name="Close"/></mousebind>
+    </context>
+    <context name="Maximize">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Click"><action name="ToggleMaximize"/></mousebind>
+    </context>
+    <context name="Iconify">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Click"><action name="Iconify"/></mousebind>
+    </context>
+  </mouse>
+
+  <menu>
+    <file>menu.xml</file>
+  </menu>
+
+  <applications/>
+</openbox_config>

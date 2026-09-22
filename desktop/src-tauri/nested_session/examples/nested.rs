@@ -1,17 +1,19 @@
 //! Runs a command inside a nested session, with nothing else attached.
 //!
-//! The window manager is the part of this feature most likely to need
-//! iterating on, and rebuilding the whole Drop AppImage to look at a titlebar
-//! takes ten minutes. This doesn't: it's a plain host binary that starts the
-//! same nested session the real launch path does and runs whatever you give
-//! it inside.
+//! Rebuilding the whole Drop AppImage to look at a titlebar takes ten
+//! minutes. This doesn't: it's a plain host binary that starts the same
+//! nested session the real launch path does - the same Xwayland, the same
+//! bundled openbox/picom/tint2 and the same generated config - and runs
+//! whatever you give it inside.
 //!
+//!     bash desktop/vendor/build.sh      # once, and after touching vendor/
 //!     cargo run -p nested_session --example nested -- xterm
 //!     cargo run -p nested_session --example nested -- wine game.exe
 //!     NESTED_SIZE=1280x800 cargo run -p nested_session --example nested
 //!
 //! With no command it just sits there, so you can point other clients at the
-//! DISPLAY it prints and watch how the WM handles them.
+//! DISPLAY it prints. The tools' own output lands in this log, prefixed with
+//! their names.
 
 use std::{process::Command, thread::sleep, time::Duration};
 
@@ -23,7 +25,7 @@ fn main() {
 #[cfg(target_os = "linux")]
 fn main() {
     // Deliberately verbose by default - the whole point of running this is to
-    // watch what the window manager does.
+    // watch what the session does.
     unsafe {
         if std::env::var_os("RUST_LOG").is_none() {
             std::env::set_var("RUST_LOG", "debug");

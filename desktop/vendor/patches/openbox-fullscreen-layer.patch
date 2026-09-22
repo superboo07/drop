@@ -1,0 +1,28 @@
+diff --git a/openbox/client.c b/openbox/client.c
+index f110a66e..6e60f2e1 100644
+--- a/openbox/client.c
++++ b/openbox/client.c
+@@ -2646,18 +2646,11 @@ static ObStackingLayer calc_layer(ObClient *self)
+         if (self->below) l = OB_STACKING_LAYER_NORMAL;
+         else l = OB_STACKING_LAYER_ABOVE;
+     }
+-    else if ((self->fullscreen ||
+-              client_is_oldfullscreen(self, &self->area)) &&
+-             /* you are fullscreen while you or your children are focused.. */
+-             (client_focused(self) || client_search_focus_tree(self) ||
+-              /* you can be fullscreen if you're on another desktop */
+-              (self->desktop != screen_desktop &&
+-               self->desktop != DESKTOP_ALL) ||
+-              /* and you can also be fullscreen if the focused client is on
+-                 another monitor, or nothing else is focused */
+-              (!focus_client ||
+-               client_monitor(focus_client) != client_monitor(self))))
+-        l = OB_STACKING_LAYER_FULLSCREEN;
++    /* Drop's nested session: fullscreen windows are NOT lifted into the
++       fullscreen layer. They stay in whatever layer they'd otherwise be in,
++       so _NET_WM_STATE_ABOVE windows (LunaTranslator's translation window)
++       and the taskbar stay visible over a fullscreen game - on a Steam Deck
++       in game mode there is no other way to get at either. */
+     else if (self->above) l = OB_STACKING_LAYER_ABOVE;
+     else if (self->below) l = OB_STACKING_LAYER_BELOW;
+     else l = OB_STACKING_LAYER_NORMAL;

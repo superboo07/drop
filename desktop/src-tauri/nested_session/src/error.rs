@@ -1,6 +1,7 @@
 use std::{
     fmt::Display,
     io::{self, Error},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -15,8 +16,16 @@ pub enum NestedSessionError {
     NoXServer,
     /// The X server started but never accepted a connection.
     ServerTimeout(String),
-    /// Another window manager already owns the nested display's root window.
-    WindowManagerConflict,
+    /// The bundled openbox/picom/tint2 aren't where they should be. Only
+    /// expected outside the AppImage, when `desktop/vendor/build.sh` hasn't
+    /// been run (or `DROP_NESTED_SESSION_TOOLS` points somewhere wrong).
+    MissingTools(Vec<PathBuf>),
+    /// One of the session's tools exited, or never became ready, while the
+    /// session was starting.
+    ToolFailed {
+        tool: &'static str,
+        reason: String,
+    },
     X11(String),
     IOError(Arc<Error>),
 }
@@ -32,8 +41,19 @@ impl Display for NestedSessionError {
             NestedSessionError::ServerTimeout(display) => {
                 format!("The nested X server never came up on display {display}")
             }
-            NestedSessionError::WindowManagerConflict => {
-                "Another window manager is already running on the nested display".to_owned()
+            NestedSessionError::MissingTools(searched) => {
+                let searched = searched
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "The nested session's window manager, compositor and taskbar aren't bundled \
+                     with this build of Drop (looked in: {searched})"
+                )
+            }
+            NestedSessionError::ToolFailed { tool, reason } => {
+                format!("The nested session's {tool} failed to start: {reason}")
             }
             NestedSessionError::X11(error) => format!("X11 error: {error}"),
             NestedSessionError::IOError(error) => error.to_string(),

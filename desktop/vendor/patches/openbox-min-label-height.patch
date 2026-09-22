@@ -1,0 +1,32 @@
+diff --git a/obrender/theme.c b/obrender/theme.c
+index 2a4f6e10..9d002ff7 100644
+--- a/obrender/theme.c
++++ b/obrender/theme.c
+@@ -139,6 +139,7 @@ RrTheme* RrThemeNew(const RrInstance *inst, const gchar *name,
+     RrFont *default_font = NULL;
+     gchar *path;
+     gint menu_overlap = 0;
++    gint min_label_height = 0;
+     struct fallbacks fbs;
+ 
+     if (name) {
+@@ -260,6 +261,11 @@ RrTheme* RrThemeNew(const RrInstance *inst, const gchar *name,
+     READ_INT("menu.overlap.x", theme->menu_overlap_x, -100, 100, menu_overlap);
+     READ_INT("menu.overlap.y", theme->menu_overlap_y, -100, 100, menu_overlap);
+     READ_INT("window.handle.width", theme->handle_height, 0, 100, 6);
++    /* Drop's nested session: a floor on the label height, which is also
++       what sizes the titlebar buttons (button_size below). Without it the
++       only way to get buttons big enough for a Steam Deck's trackpad
++       cursor is a titlebar font big enough to shout. */
++    READ_INT("window.label.height", min_label_height, 0, 100, 0);
+     READ_INT("padding.width", theme->paddingx, 0, 100, 3);
+     READ_INT("padding.height", theme->paddingy, 0, 100, theme->paddingx);
+     READ_INT("border.width", theme->fbwidth, 0, 100, 1);
+@@ -962,6 +968,7 @@ RrTheme* RrThemeNew(const RrInstance *inst, const gchar *name,
+         RrMargins(theme->a_focused_label, &fl, &ft, &fr, &fb);
+         RrMargins(theme->a_unfocused_label, &ul, &ut, &ur, &ub);
+         theme->label_height = theme->win_font_height + MAX(ft + fb, ut + ub);
++        theme->label_height = MAX(theme->label_height, min_label_height);
+         theme->label_height += theme->label_height % 2;
+ 
+         /* this would be nice I think, since padding.width can now be 0,

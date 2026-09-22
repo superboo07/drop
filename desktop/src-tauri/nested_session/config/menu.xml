@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Nothing is bound to a menu; this only exists so openbox doesn't log
+     that it couldn't find one. -->
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+  <menu id="root-menu" label="Drop"/>
+</openbox_menu>

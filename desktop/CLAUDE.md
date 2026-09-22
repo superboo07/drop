@@ -8,7 +8,7 @@ Drop Desktop Client — the desktop app for [Drop](https://github.com/Drop-OSS/d
 
 ## Setup
 
-This app lives at `desktop/` inside the Drop monorepo. The shared Nuxt UI layer/components it used to pull in as the `libs/drop-base` submodule is now a sibling directory in the same repo, `libraries/base`, which `main/nuxt.config.ts` extends via a relative path (`../../libraries/base`) — so anything that builds this app needs the whole repo present, not just `desktop/`. There are no submodules any more.
+This app lives at `desktop/` inside the Drop monorepo. The shared Nuxt UI layer/components it used to pull in as the `libs/drop-base` submodule is now a sibling directory in the same repo, `libraries/base`, which `main/nuxt.config.ts` extends via a relative path (`../../libraries/base`) — so anything that builds this app needs the whole repo present, not just `desktop/`. The only submodules are the nested session's tools under `desktop/vendor/` (`git submodule update --init desktop/vendor`); only the Linux AppImage build needs them.
 
 ## Commands
 
@@ -45,7 +45,7 @@ This workspace has **no `[workspace.dependencies]` table** — don't add `dep = 
   - `download_manager` — game download queueing, pausing/resuming, progress
   - `games` — game library, collections, install/version management
   - `process` — launching and monitoring game processes (Proton/Wine/umu-run on Linux, native elsewhere), including compat-layer (Proton path) management and the LunaTranslator integration (`process/src/luna.rs`)
-  - `nested_session` — a nested X server plus a small floating window manager, for running a game and LunaTranslator as draggable windows on one surface (Linux only; see below)
+  - `nested_session` — a nested X server running bundled openbox/picom/tint2, for running a game and LunaTranslator as draggable, composited windows on one surface (Linux only; see below)
   - `remote` — talks to the user's Drop server: auth, object fetching, the custom `server://` URI scheme proxy
   - `cloud_saves` — cloud save backup/sync
   - `utils` — small shared helpers (`app_emit!` macro, locking helpers)
@@ -85,48 +85,38 @@ Three things about that are easy to get wrong:
 
 The bridge ships inside the LunaTranslator AppImage, so Drop extracts its own copy once (`<appimage> --appimage-extract 'opt/lunatranslator/files/LunaHook/*'`, a couple of MB rather than the full ~360MB image) into `<data dir>/luna/LunaHook`. The `lunaBridgePath` setting is an override for people who have it elsewhere, not something anyone needs to fill in.
 
-**The nested session** exists for the Steam Deck's game mode: gamescope composites exactly one window, so a game and a translator beside it are two things you can only ever look at one at a time. `nested_session` starts a rootful, fullscreen `Xwayland` (or `Xephyr` on an X11 desktop) — which the host compositor sees as one ordinary window, i.e. exactly the one window gamescope will show — and runs a floating reparenting WM inside it, so both are windows the user drags around. It is deliberately **floating, not tiling**: on a controller/trackpad, windows the user positions beat any layout the WM picks, and the chrome is oversized (34px titlebar, 16px bottom grab bar, 40px taskbar) for the same reason.
+**The nested session** exists for the Steam Deck's game mode: gamescope composites exactly one window, so a game and a translator beside it are two things you can only ever look at one at a time. `nested_session` starts a rootful, fullscreen `Xwayland` (or `Xephyr` on an X11 desktop) — which the host compositor sees as one ordinary window, i.e. exactly the one window gamescope will show — and runs three off-the-shelf tools inside it:
 
-It is a small WM but not a naive one, because the two things it hosts are the least forgiving X clients there are. What it has to implement, and why:
+- **openbox** — floating window manager. Deliberately **floating, not tiling**: on a controller/trackpad, windows the user positions beat any layout the WM picks. It already handles everything games and Qt need (EWMH fullscreen, `WM_NORMAL_HINTS`, Motif hints, `WM_TAKE_FOCUS`, `_NET_WM_MOVERESIZE`, `_NET_FRAME_EXTENTS`, transients, iconify), and frames a 32-bit client in a 32-bit frame so its alpha survives.
+- **picom** — compositor. X11 has no alpha blending without one, and Qt (so LunaTranslator) won't even *try* to draw a translucent window until something owns `_NET_WM_CM_S<screen>`. xrender backend (built without OpenGL); inside Xwayland that's still GPU work via glamor.
+- **tint2** — taskbar. A fullscreen Windows game minimises *itself* whenever it loses activation (`WM_ACTIVATEAPP` under Wine — not a bug), and a Deck in game mode has no keyboard, so without a taskbar minimise silently *loses windows*. Click = `toggle` (focus or restore, never minimise). Its strut shrinks `_NET_WORKAREA`, so maximized windows stop above it.
 
-- **Synthetic `ConfigureNotify` on every move as well as every resize** (`notify_geometry`). A reparented client only sees real ConfigureNotifys whose x/y are relative to its frame, so without this it believes it sits at the chrome offset forever. Wine takes that rect and hands it to the game, so a missing one shows up as *the game rendering at the wrong size in the wrong place* — nothing that looks like a WM bug at all. This shipped broken once.
-- **Real `_NET_WM_STATE_FULLSCREEN`.** Omitting it does not keep a game windowed — the game goes fullscreen anyway by resizing itself, and the only effect is that the WM doesn't know, so it ends up with a frame bigger than the root and its client area shoved under a titlebar. Also shipped broken once. A fullscreen window now gets a borderless frame covering the root exactly.
-- **Four stacking layers** (`Layer`, `restack`) — desktop / below / normal / above, with the taskbar above all of them. Fullscreen sinks, `_NET_WM_STATE_ABOVE` floats. That, not refusing fullscreen, is what keeps LunaTranslator readable over a fullscreen game.
-- **Minimise, and a taskbar to undo it with.** A fullscreen Windows game minimises *itself* on every loss of activation — that's `WM_ACTIVATEAPP` under Wine, not a bug — so dropping the request leaves the game believing it is iconified while still on screen, rendering as a stale strip in a corner. That was the "I tab back in and it's fucked" bug. But honouring it is only half the feature: with no taskbar, a minimised window could only be recovered with Super+Tab, and a Deck in game mode has no keyboard, so minimise silently *lost windows*. `create_taskbar`/`draw_taskbar`/`taskbar_click` own a strip along the bottom edge — the WM's own override-redirect window, absent from `clients`, `order`, `_NET_CLIENT_LIST` and Super+Tab. One entry per managed window **including iconified ones** (dimmed, with a bright bar along the bottom), click to focus or restore. Entries are laid out from `taskbar_order` (insertion order), deliberately not `order` (stacking order), so they don't reshuffle under the cursor on every click. It repaints on manage, unmanage, title change, iconify/restore, focus change and root resize.
-- **`_NET_WORKAREA` reserves the taskbar's height** (`work_area`), so maximized windows and new placements stop above it. Fullscreen deliberately ignores it and takes the whole root — the game gets the screen, the strip just stacks on top.
-- **`WM_NORMAL_HINTS`** (`Client::constrain`): min/max/base/increments/aspect. Games routinely pin min == max to declare a fixed resolution, and honouring it is the difference between a correctly-sized game and a smeared one. It also decides whether a window is resizable at all.
-- **`_NET_WM_WINDOW_TYPE`.** Qt does *not* always set override-redirect on menus, combo popups, tooltips and drag pixmaps — they arrive as ordinary managed windows, and framing one puts a titlebar on a tooltip. Checking override-redirect alone is not enough.
-- **`_MOTIF_WM_HINTS`** for the borderless windows Wine and Qt both ask for.
-- **The ICCCM focus models** — `WM_TAKE_FOCUS` plus `WM_HINTS.input`. `SetInputFocus` at a client that asked for `WM_TAKE_FOCUS` gives you a window that looks focused and ignores the keyboard, which is Qt's failure mode exactly. `WM_TAKE_FOCUS` needs a real timestamp, hence `last_time`.
-- **`_NET_FRAME_EXTENTS`, `_NET_WORKAREA` and the desktop properties.** Qt reads these to place its own dialogs; a toolkit that finds none of them guesses, and guesses badly.
-- **`_NET_WM_MOVERESIZE`** so client-side-decorated windows can be dragged — their titlebar is inside the client area where we never see the press.
-- `WM_TRANSIENT_FOR` (dialogs centre on their parent and are raised with it), maximize, `WM_CHANGE_STATE`/`_NET_WM_STATE_HIDDEN` for iconification, `_NET_WM_ALLOWED_ACTIONS`, and `WM_STATE` set to Iconic/Withdrawn as ICCCM requires.
-- **Titlebar buttons come from one function** (`titlebar_buttons`), used by both `draw_frame` and the hit test in `button_press`. Right to left: close, maximize (omitted for a fixed-size window, with minimise sliding right to fill the gap), minimise. They were two separate pieces of arithmetic once, and drifted into a minimise button that was documented, undrawn and unclickable.
-- Super+Tab raises the next window, as a way out of a game that holds a pointer grab and swallows titlebar clicks.
-- Both LunaTranslator and the nested server hang off `RunningProcess.luna`, purely for its `Drop` impl: when the game exits or is killed, the field drops and takes them down in order (LunaTranslator first, then the X server — the other way round just makes LunaTranslator crash instead of exit).
+**We didn't write a window manager.** An earlier version of this crate was a ~3000-line hand-written reparenting WM (it's in git history, commit `093b8532`). It was replaced when transparency needed a compositor too — maintaining our own WM *and* compositor made no sense when mature ones exist. Don't reintroduce one.
 
-**Don't rebuild the AppImage to test a WM change** — it takes ten minutes and the WM is the part most likely to need iterating on. There are two host-side tools:
+**Where they come from.** Submodules under `desktop/vendor/` (openbox `release-3.6.1`, picom `v13`, tint2 `v17.0.2`, plus libconfig for picom since mantic's is too old), built by `bash desktop/vendor/build.sh` — in Docker (`desktop/vendor/Dockerfile`, same `ubuntu:23.10` base as `Dockerfile.build` so glibc matches), from a *copy* of the sources so the submodules stay clean. Output is a relocatable prefix at `desktop/vendor/out/nested-session/{bin,lib,licenses}`: their libraries bundled, `RUNPATH $ORIGIN/../lib`, with only libc/X11/font/GL taken from the host (AppImage's excludelist split). `build_appimage.sh` runs that script first and copies the prefix into the AppImage at `usr/libexec/drop-tools/nested-session`. Licensing: each is a separate process (GPL-2 openbox/tint2, MPL/MIT picom, LGPL libconfig statically inside picom) — nothing links into Drop.
+
+**Drop's openbox patches** (`desktop/vendor/patches/openbox-*.patch`, applied to the build copy):
+- `fullscreen-layer`: upstream lifts a *focused* fullscreen window above `_NET_WM_STATE_ABOVE` windows and docks. That would hide LunaTranslator's always-on-top window and the taskbar behind a fullscreen game — the exact case this feature exists for. Patched so fullscreen windows stay in their normal layer.
+- `min-label-height`: adds a `window.label.height` theme key. Upstream sizes titlebar buttons from the font height alone; this gets 30px buttons (34px titlebar) for the Deck's trackpad cursor without a giant font.
+
+**Config** lives in `src-tauri/nested_session/config/` (`rc.xml`, `menu.xml`, `picom.conf`, `tint2rc`, `theme/` — themerc + 14px XBM button glyphs), compiled in with `include_str!` and written to `$XDG_RUNTIME_DIR/drop-nested-session-<pid>-<display>` per session. `src/tools.rs` finds the prefix (`$DROP_NESTED_SESSION_TOOLS`, then `$APPDIR/usr/libexec/drop-tools/nested-session`, then — debug builds only — `desktop/vendor/out/nested-session` in the checkout), starts them in order and only calls each one started once it's visibly working (openbox: `_NET_SUPPORTING_WM_CHECK`; picom: owns `_NET_WM_CM_S0`; tint2: `_NET_WORKAREA` shrunk). Their stdout/stderr go to Drop's log prefixed `[openbox]`/`[picom]`/`[tint2]`, since there's no terminal in game mode. A tool that dies is restarted (up to 5 times a minute).
+
+**Everything is spawned from one dedicated `nested-session` thread**, which also supervises and tears down. That's not style: `PR_SET_PDEATHSIG` (`server::die_with_parent`) fires when the *thread* that forked the child exits, not the process — spawning from the caller's thread (possibly a pooled worker) would kill the X server whenever that thread happened to be retired.
+
+Both LunaTranslator and the nested session hang off `RunningProcess.luna`, purely for its `Drop` impl: when the game exits or is killed, the field drops and takes them down in order (LunaTranslator first, then the session — the other way round just makes LunaTranslator crash instead of exit). The session itself stops tint2, picom, openbox, then the X server.
+
+**Don't rebuild the AppImage to test a session change** — it takes ten minutes. `bash desktop/vendor/build.sh` takes about two (only needed after touching `desktop/vendor/`), and config changes need nothing rebuilt but the crate:
 
 ```bash
-cargo run -p nested_session --example nested -- xmessage hello   # or any X client; no args = idle, attach your own
-cargo test -p nested_session                                      # drives a real client through the transitions
-
-# `poke` drives the WM against a running session without a human clicking:
-cargo run -p nested_session --example poke -- :70 list
-cargo run -p nested_session --example poke -- :70 tree        # frame vs client geometry, for desync hunting
-cargo run -p nested_session --example poke -- :70 activate 0
-cargo run -p nested_session --example poke -- :70 minimise 0  # the WM_CHANGE_STATE Wine sends itself
-cargo run -p nested_session --example poke -- :70 restore 0   # clicks that window's taskbar entry
+cargo run -p nested_session --example nested -- xmessage hello   # or any X client; no args = idle
+cargo test -p nested_session
 ```
 
-`tests/fullscreen.rs` asserts the geometry a client actually ends up with across the windowed → fullscreen → windowed round trip, that a fixed-size window isn't stretched, that a minimised window comes back from a taskbar click, and that the work area leaves room for the strip — i.e. it fails on each of the bugs above. It skips itself (rather than failing) when there's no Xwayland/Xephyr to nest inside, so it's safe in CI.
+`tests/session.rs` covers: the fullscreen round trip, the EWMH atoms games and Qt rely on, a fixed-size window not being stretched, minimise → taskbar click → restored, the work area leaving room for the taskbar, a compositor owning `_NET_WM_CM_S0`, a 32-bit client keeping 32-bit ancestors (alpha), and an always-on-top window plus the taskbar staying above a *focused* fullscreen window (the openbox patch). It skips itself (rather than failing) when there's no Xwayland/Xephyr or the tools aren't built, so it's safe in CI. **Both the example and the tests put a fullscreen window on the host's screen** — ask before running them on someone's machine.
 
-Two traps when running any of this by hand:
+**Tear down by PID, never by name.** `pkill -x Xwayland` matches the *host* session's Xwayland and will take the user's whole desktop down with it (this happened). `pkill openbox`/`picom` would likewise hit a host session running them. `pkill -f "[x]message"` is no safer: the bracket trick stops the pattern matching itself, but the word still appears elsewhere in your own command line, so it kills your shell. Record `$!` for what you spawn and kill those pids; everything in the session carries `PR_SET_PDEATHSIG`, so killing `nested` is enough.
 
-- **Tear down by PID, never by name.** `pkill -x Xwayland` matches the *host* session's Xwayland and will take the user's whole desktop down with it. `pkill -f "[x]message"` is no safer: the bracket trick stops the pattern matching itself, but the word still appears elsewhere in your own command line, so it kills your shell. Record `$!` for what you spawn and kill those pids; the X server carries `PR_SET_PDEATHSIG`, so killing `nested` is usually enough.
-- **`poke` syncs before exiting** (`get_input_focus` round trip). `flush()` only pushes bytes at the socket, and a connection closing on their heels can have them dropped — which looks like an action that intermittently does nothing.
-
-Nothing new gets bundled in the AppImage for any of this: `x11rb` is pure Rust (no libX11 to link, and MIT/Apache-2.0 so it doesn't touch Drop's licensing), and an X server has to come from the host to match its graphics stack. LunaTranslator is spawned through `sanitize_external_command` like every other external process, plus its own process group — an AppImage's runtime *forks* its payload instead of exec'ing it, so killing the pid we spawned would leave LunaTranslator running.
+LunaTranslator is spawned through `sanitize_external_command` like every other external process, plus its own process group — an AppImage's runtime *forks* its payload instead of exec'ing it, so killing the pid we spawned would leave LunaTranslator running.
 
 ### Window/tray behavior
 

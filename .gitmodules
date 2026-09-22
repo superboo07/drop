@@ -1,0 +1,12 @@
+[submodule "desktop/vendor/openbox"]
+	path = desktop/vendor/openbox
+	url = https://github.com/Mikachu/openbox.git
+[submodule "desktop/vendor/picom"]
+	path = desktop/vendor/picom
+	url = https://github.com/yshui/picom.git
+[submodule "desktop/vendor/tint2"]
+	path = desktop/vendor/tint2
+	url = https://gitlab.com/o9000/tint2.git
+[submodule "desktop/vendor/libconfig"]
+	path = desktop/vendor/libconfig
+	url = https://github.com/hyperrealm/libconfig.git

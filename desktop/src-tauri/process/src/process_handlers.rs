@@ -434,6 +434,18 @@ impl ProcessHandler for UMUCompatLauncher {
             .collect::<Vec<_>>()
             .join(" ");
 
+        // With LunaTranslator enabled, the game isn't what Proton runs any
+        // more: the bridge is, and it starts the game itself from inside the
+        // prefix. LunaTranslator on the host is started separately by the
+        // process manager, which also owns its lifetime.
+        #[cfg(target_os = "linux")]
+        let launch_command = if game_version.user_configuration.luna_translator {
+            let bridge = crate::luna::resolve_bridge(database)?;
+            crate::luna::wrap_launch_command(&bridge, launch_command)?
+        } else {
+            launch_command
+        };
+
         Ok(format!(
             "{game_id_env} {proton_env} {wineprefix_env} {extra_env} {umu:?} {launch}",
             umu = UMU_LAUNCHER_EXECUTABLE

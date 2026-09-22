@@ -1,0 +1,19 @@
+[package]
+name = "nested_session"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.28"
+serde_with = "3.15.0"
+utils = { path = "../utils", version = "0.1.0" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# MIT OR Apache-2.0, pure Rust (no libX11 link) - so the window manager is
+# statically part of the Drop binary and needs nothing extra in the AppImage.
+x11rb = "0.14.0"
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Dev-only, for the `nested` example's logging - never linked into Drop.
+env_logger = "0.11"

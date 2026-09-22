@@ -86,6 +86,8 @@ pub mod data {
                 disable_esync: false,
                 disable_fsync: false,
                 extra_env_vars: String::new(),
+                luna_translator: false,
+                nested_session: false,
             }
         }
 
@@ -105,6 +107,19 @@ pub mod data {
             pub disable_fsync: bool,
             #[serde(default)]
             pub extra_env_vars: String,
+            // Launch this game with LunaTranslator attached: the game command
+            // gets wrapped in LunaCompanion.exe (which runs inside the same
+            // Wine/Proton prefix and streams hooked text back out over TCP),
+            // and LunaTranslator itself is spawned alongside it. Linux only -
+            // the bridge exists purely to get text out of Wine.
+            #[serde(default)]
+            pub luna_translator: bool,
+            // Run the game and LunaTranslator inside a nested X11 server of
+            // our own, so both are ordinary draggable windows instead of
+            // fighting over the single surface gamescope will show (Steam
+            // Deck game mode). See the `nested_session` crate.
+            #[serde(default)]
+            pub nested_session: bool,
         }
 
         impl Default for UserConfiguration {
@@ -185,7 +200,24 @@ pub mod data {
             // it fights with fixed-size layout (e.g. the custom titlebar) in ways
             // that are hard to predict from window dimensions alone.
             #[serde(default = "default_ui_scale")]
-            pub ui_scale: f64, // ... other settings ...
+            pub ui_scale: f64,
+            // Path to the LunaTranslator AppImage (or any executable that
+            // starts it). `None` means the integration is unconfigured and
+            // every per-game LunaTranslator toggle is inert.
+            #[serde(default)]
+            pub luna_translator_path: Option<String>,
+            // Override for LunaCompanion.exe, the in-prefix bridge. Normally
+            // left unset: it ships inside the LunaTranslator AppImage and we
+            // extract our own copy from there (see process::luna).
+            #[serde(default)]
+            pub luna_bridge_path: Option<String>,
+            // Port LunaTranslator listens on for the bridge to connect back
+            // to. Matches LunaCompanionServer.LISTEN_PORT upstream.
+            #[serde(default = "default_luna_port")]
+            pub luna_port: u16, // ... other settings ...
+        }
+        fn default_luna_port() -> u16 {
+            52300
         }
         fn default_ui_scale() -> f64 {
             1.0
@@ -200,6 +232,9 @@ pub mod data {
                     windowed_launch_picker: false,
                     start_fullscreen: false,
                     ui_scale: default_ui_scale(),
+                    luna_translator_path: None,
+                    luna_bridge_path: None,
+                    luna_port: default_luna_port(),
                 }
             }
         }

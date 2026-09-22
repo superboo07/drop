@@ -18,6 +18,8 @@ pub static PROCESS_MANAGER: ProcessManagerWrapper = ProcessManagerWrapper::new()
 pub mod compat;
 pub mod error;
 pub mod format;
+#[cfg(target_os = "linux")]
+pub mod luna;
 mod parser;
 pub mod process_handlers;
 pub mod process_manager;

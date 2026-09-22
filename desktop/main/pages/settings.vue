@@ -47,6 +47,7 @@ import {
   HomeIcon,
   RectangleGroupIcon,
   BugAntIcon,
+  LanguageIcon,
 } from "@heroicons/vue/16/solid";
 import type { Component } from "vue";
 import type { NavigationItem } from "~/types";
@@ -93,6 +94,8 @@ onMounted(() => {
   });
 });
 
+const currentPlatform = platform();
+
 // Make navigation reactive by wrapping in computed
 const navigation = computed(() => [
   {
@@ -123,6 +126,16 @@ const navigation = computed(() => [
         },
       ]
     : []),
+  ...(currentPlatform === "linux"
+    ? [
+        {
+          label: "Translation",
+          route: "/settings/translation",
+          prefix: "/settings/translation",
+          icon: LanguageIcon,
+        },
+      ]
+    : []),
   {
     label: "Account",
     route: "/settings/account",
@@ -140,8 +153,6 @@ const navigation = computed(() => [
       ]
     : []),
 ]);
-
-const currentPlatform = platform();
 
 // Use .value to unwrap the computed ref
 const { currentNavigation } = useCurrentNavigationIndex(navigation.value);

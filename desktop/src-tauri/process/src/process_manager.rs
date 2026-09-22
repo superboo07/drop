@@ -44,6 +44,13 @@ pub struct RunningProcess {
     // so chunks can carry real started_at/ended_at timestamps.
     checkpoint: Instant,
     checkpoint_wall: chrono::DateTime<chrono::Utc>,
+    // LunaTranslator and, if the game asked for one, the nested X session
+    // they share. Held here purely for its lifetime: dropping the
+    // RunningProcess (on exit or on kill_game) shuts both down. Never read,
+    // by design - its Drop impl is the entire point of storing it.
+    #[cfg(target_os = "linux")]
+    #[allow(dead_code)]
+    luna: Option<crate::luna::LunaSession>,
 }
 
 pub struct ProcessManager<'a> {
@@ -476,6 +483,12 @@ impl ProcessManager<'_> {
             .get(version_name)
             .ok_or(ProcessError::InvalidVersion)?;
 
+        #[cfg(target_os = "linux")]
+        let (luna_enabled, nested_enabled) = (
+            game_version.user_configuration.luna_translator,
+            game_version.user_configuration.nested_session,
+        );
+
         let game_log_folder = &self.get_log_dir(game_id);
         create_dir_all(game_log_folder)?;
 
@@ -783,6 +796,25 @@ impl ProcessManager<'_> {
             command.process_group(0);
         }
 
+        // Started before the game, but it doesn't have to be: the bridge
+        // inside the prefix retries its connection for ~30s. If the game then
+        // fails to spawn, this is dropped along with the error and takes
+        // LunaTranslator (and the nested session) back down with it.
+        #[cfg(target_os = "linux")]
+        let luna = if luna_enabled {
+            Some(start_luna_session(
+                &self.app_handle,
+                &db_lock,
+                nested_enabled,
+                game_log_folder,
+                &meta,
+                current_time.timestamp(),
+                &mut command,
+            )?)
+        } else {
+            None
+        };
+
         let child = command.spawn()?;
 
         let launch_process_handle = Arc::new(SharedChild::new(child)?);
@@ -810,6 +842,8 @@ impl ProcessManager<'_> {
                 manually_killed: false,
                 checkpoint: Instant::now(),
                 checkpoint_wall: chrono::Utc::now(),
+                #[cfg(target_os = "linux")]
+                luna,
             },
         );
         spawn(move || {
@@ -821,6 +855,78 @@ impl ProcessManager<'_> {
         });
         Ok(())
     }
+}
+
+/// Starts LunaTranslator for a launch, plus the nested X session when the
+/// game asked for one, and points the game's own command at that session.
+#[cfg(target_os = "linux")]
+fn start_luna_session(
+    app_handle: &AppHandle,
+    database: &Database,
+    nested: bool,
+    log_folder: &Path,
+    meta: &DownloadableMetadata,
+    timestamp: i64,
+    command: &mut Command,
+) -> Result<crate::luna::LunaSession, ProcessError> {
+    let nested_session = if nested {
+        let (width, height) = primary_monitor_size(app_handle);
+        let session = nested_session::NestedSession::start(width, height)
+            .map_err(|e| ProcessError::NestedSession(e.to_string()))?;
+
+        command
+            .env("DISPLAY", session.display())
+            // Given the choice, Proton and SDL both prefer Wayland - which
+            // would put the game straight back on the host compositor,
+            // outside the session it's meant to share with LunaTranslator.
+            .env_remove("WAYLAND_DISPLAY")
+            .env("SDL_VIDEODRIVER", "x11")
+            .env("PROTON_ENABLE_WAYLAND", "0");
+
+        Some(session)
+    } else {
+        None
+    };
+
+    let stdout = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(log_folder.join(format!("luna-{}-{timestamp}.log", meta.version)))?;
+    let stderr = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(log_folder.join(format!("luna-{}-{timestamp}-error.log", meta.version)))?;
+
+    let display = nested_session
+        .as_ref()
+        .map(|session| session.display().to_owned());
+    let child = crate::luna::spawn(database, display.as_deref(), stdout, stderr)?;
+
+    Ok(crate::luna::LunaSession::new(child, nested_session))
+}
+
+/// Size for the nested X server. Under gamescope this is the game-mode
+/// output, which is what we want to fill exactly.
+#[cfg(target_os = "linux")]
+fn primary_monitor_size(app_handle: &AppHandle) -> (u16, u16) {
+    // The Steam Deck's own panel, as the most useful guess if the monitor
+    // can't be queried.
+    const FALLBACK: (u16, u16) = (1280, 800);
+
+    app_handle
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|monitor| {
+            let size = monitor.size();
+            (
+                size.width.clamp(640, 7680) as u16,
+                size.height.clamp(480, 4320) as u16,
+            )
+        })
+        .unwrap_or(FALLBACK)
 }
 
 fn kill_process_tree(handle: &SharedChild) -> io::Result<()> {

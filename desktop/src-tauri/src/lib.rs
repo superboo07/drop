@@ -62,6 +62,7 @@ mod collections;
 mod download_manager;
 mod downloads;
 mod games;
+mod luna;
 mod playtime;
 mod process;
 mod remote;
@@ -290,7 +291,9 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             ::process::compat::remove_proton_layer,
             #[cfg(target_os = "linux")]
-            ::process::compat::set_default
+            ::process::compat::set_default,
+            luna::fetch_luna_status,
+            luna::extract_luna_bridge
         ])
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())

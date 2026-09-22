@@ -59,6 +59,8 @@ export type GameVersion = {
     disableEsync: boolean;
     disableFsync: boolean;
     extraEnvVars: string;
+    lunaTranslator: boolean;
+    nestedSession: boolean;
   };
   setups: Array<{ platform: string }>;
   launches: Array<{ platform: string }>;
@@ -128,4 +130,7 @@ export type Settings = {
   windowedLaunchPicker: boolean;
   startFullscreen: boolean;
   uiScale: number;
+  lunaTranslatorPath: string | null;
+  lunaBridgePath: string | null;
+  lunaPort: number;
 };

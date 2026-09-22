@@ -112,7 +112,17 @@ cargo run -p nested_session --example nested -- xmessage hello   # or any X clie
 cargo test -p nested_session
 ```
 
-`tests/session.rs` covers: the fullscreen round trip, the EWMH atoms games and Qt rely on, a fixed-size window not being stretched, minimise → taskbar click → restored, the work area leaving room for the taskbar, a compositor owning `_NET_WM_CM_S0`, a 32-bit client keeping 32-bit ancestors (alpha), and an always-on-top window plus the taskbar staying above a *focused* fullscreen window (the openbox patch). It skips itself (rather than failing) when there's no Xwayland/Xephyr or the tools aren't built, so it's safe in CI. **Both the example and the tests put a fullscreen window on the host's screen** — ask before running them on someone's machine.
+`tests/session.rs` covers: the fullscreen round trip, the EWMH atoms games and Qt rely on, a fixed-size window not being stretched, minimise → taskbar click → restored, the work area leaving room for the taskbar, a compositor owning `_NET_WM_CM_S0`, a 32-bit client keeping 32-bit ancestors (alpha), and an always-on-top window plus the taskbar staying above a *focused* fullscreen window (the openbox patch). It skips itself (rather than failing) when there's no Xwayland/Xephyr or the tools aren't built, so it's safe in CI. **Both the example and the tests put a fullscreen window on the host's screen** — ask before running them on someone's machine, or run them where nothing is visible: inside a headless Weston, which the nested Xwayland then attaches to instead of the real session.
+
+```bash
+SOCK=drop-headless-$$
+env -u DISPLAY weston --backend=headless --socket=$SOCK --width=1280 --height=800 --idle-time=0 & WESTON=$!
+env -u DISPLAY -u GAMESCOPE_WAYLAND_DISPLAY WAYLAND_DISPLAY=$SOCK cargo test -p nested_session
+# screenshots of a session running there: import -display :<n> -window root shot.png
+kill $WESTON
+```
+
+That's good for the WM/compositor/taskbar and plain X clients, but not for games: headless Weston has no GPU output, and a Proton game's X connection dies there (`XIO: fatal IO error 110`) before it ever shows a window. Real-game checks need a real display.
 
 **Tear down by PID, never by name.** `pkill -x Xwayland` matches the *host* session's Xwayland and will take the user's whole desktop down with it (this happened). `pkill openbox`/`picom` would likewise hit a host session running them. `pkill -f "[x]message"` is no safer: the bracket trick stops the pattern matching itself, but the word still appears elsewhere in your own command line, so it kills your shell. Record `$!` for what you spawn and kill those pids; everything in the session carries `PR_SET_PDEATHSIG`, so killing `nested` is enough.
 

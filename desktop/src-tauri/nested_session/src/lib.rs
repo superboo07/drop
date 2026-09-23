@@ -21,6 +21,8 @@
 pub mod error;
 
 #[cfg(target_os = "linux")]
+mod cursor;
+#[cfg(target_os = "linux")]
 mod server;
 #[cfg(target_os = "linux")]
 mod tools;
@@ -52,6 +54,8 @@ mod linux {
         /// Dropped (disconnected) to tell the session thread to stop.
         stop: Option<Sender<()>>,
         thread: Option<JoinHandle<()>>,
+        /// See `draw_cursor`. Ends by itself once the server is gone.
+        cursor: Option<JoinHandle<()>>,
     }
 
     impl NestedSession {
@@ -76,6 +80,7 @@ mod linux {
                     display,
                     stop: Some(stop),
                     thread: Some(thread),
+                    cursor: None,
                 }),
                 Ok(Err(e)) => {
                     let _ = thread.join();
@@ -96,6 +101,20 @@ mod linux {
         pub fn display(&self) -> &str {
             &self.display
         }
+
+        /// Draws the pointer into the session itself, for as long as it
+        /// runs.
+        ///
+        /// For gamescope, which draws no cursor over the session otherwise;
+        /// see `cursor` for why. Not for a desktop session: the host
+        /// compositor already shows the session's cursor there, and this
+        /// would be a second one.
+        pub fn draw_cursor(&mut self) -> Result<(), NestedSessionError> {
+            if self.cursor.is_none() {
+                self.cursor = Some(crate::cursor::spawn(self.display.clone())?);
+            }
+            Ok(())
+        }
     }
 
     impl Drop for NestedSession {
@@ -105,6 +124,12 @@ mod linux {
                 && thread.join().is_err()
             {
                 warn!("nested session thread panicked");
+            }
+            // After the server: its connection closing is what ends it.
+            if let Some(cursor) = self.cursor.take()
+                && cursor.join().is_err()
+            {
+                warn!("nested session cursor mirror panicked");
             }
         }
     }

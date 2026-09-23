@@ -9,12 +9,16 @@ serde_with = "3.15.0"
 utils = { path = "../utils", version = "0.1.0" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# MIT OR Apache-2.0, pure Rust (no libX11 link). Only used to see whether
-# the session's tools are up; the window manager, compositor and taskbar
-# themselves are separate processes (desktop/vendor).
-x11rb = "0.14.0"
+# MIT OR Apache-2.0, pure Rust (no libX11 link). Used to see whether the
+# session's tools are up, and to draw its cursor under gamescope (xfixes,
+# xinput); the window manager, compositor and taskbar themselves are
+# separate processes (desktop/vendor).
+x11rb = { version = "0.14.0", features = ["xfixes", "xinput"] }
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 # Dev-only, for the `nested` example's logging - never linked into Drop.
 env_logger = "0.11"
+# Dev-only: the tests move the pointer the way a person would (XTEST), so it
+# arrives as real device motion.
+x11rb = { version = "0.14.0", features = ["xtest"] }

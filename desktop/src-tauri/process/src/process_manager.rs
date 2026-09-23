@@ -884,9 +884,16 @@ fn start_luna_session(
     command: &mut Command,
 ) -> Result<crate::luna::LunaSession, ProcessError> {
     let nested_session = if nested {
+        let under_gamescope = show_main_window_under_gamescope(app_handle);
         let (width, height) = primary_monitor_size(app_handle);
-        let session = nested_session::NestedSession::start(width, height)
+        let mut session = nested_session::NestedSession::start(width, height)
             .map_err(|e| ProcessError::NestedSession(e.to_string()))?;
+        // gamescope draws no cursor over the session itself; see
+        // `nested_session::cursor`. Not fatal: the game still runs, just
+        // with an invisible pointer.
+        if under_gamescope && let Err(e) = session.draw_cursor() {
+            warn!("could not draw the nested session's cursor: {e}");
+        }
 
         command
             .env("DISPLAY", session.display())
@@ -919,6 +926,41 @@ fn start_luna_session(
     let child = crate::luna::spawn(database, display.as_deref(), stdout, stderr)?;
 
     Ok(crate::luna::LunaSession::new(child, nested_session))
+}
+
+/// Under gamescope, a nested session is only ever shown if Drop's own window
+/// is mapped.
+///
+/// The session's Xwayland is a *Wayland* window on gamescope, and gamescope
+/// only reports X11 windows to Steam as focusable (`determine_and_apply_focus`
+/// in its steamcompmgr.cpp skips everything but `XWAYLAND` windows). Steam
+/// only hands the screen to an app once gamescope has reported it; after
+/// that, gamescope picks among all of that app's windows, Wayland ones
+/// included - and the nested session is one of them, found by walking its
+/// process tree up to Steam's `SteamLaunch AppId=` reaper.
+///
+/// So it's Drop's own X11 window that gets the app on screen. Launched from
+/// Drop's UI that window is already up; a Steam shortcut cold-starts Drop
+/// with it hidden, and the game, LunaTranslator and the whole session ran
+/// behind Steam's UI with nothing ever shown.
+///
+/// Returns whether this is gamescope at all.
+#[cfg(target_os = "linux")]
+fn show_main_window_under_gamescope(app_handle: &AppHandle) -> bool {
+    use tauri::Manager as _;
+
+    if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
+        return false;
+    }
+    match app_handle.get_window("main") {
+        Some(window) => {
+            if let Err(e) = window.show() {
+                warn!("could not show Drop's window for the nested session: {e}");
+            }
+        }
+        None => warn!("no main window to show for the nested session"),
+    }
+    true
 }
 
 /// Size for the nested X server. Under gamescope this is the game-mode

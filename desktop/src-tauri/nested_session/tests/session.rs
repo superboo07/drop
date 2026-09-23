@@ -17,9 +17,12 @@ use std::{
 use nested_session::{NestedSession, error::NestedSessionError};
 use x11rb::{
     connection::Connection,
+    protocol::shape::ConnectionExt as _,
+    protocol::xfixes::{ConnectionExt as _, GetCursorImageReply},
+    protocol::xtest::ConnectionExt as _,
     protocol::xproto::{
-        AtomEnum, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ButtonPressEvent, ClientMessageEvent,
-        ColormapAlloc, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask,
+        AtomEnum, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ButtonPressEvent,
+        ChangeWindowAttributesAux, ClientMessageEvent, ColormapAlloc, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask,
         MapState, PropMode, Screen, Window, WindowClass,
     },
     rust_connection::RustConnection,
@@ -746,4 +749,149 @@ fn a_game_leaving_fullscreen_gets_the_windowed_size_it_asked_for() {
         conn.destroy_window(window).expect("destroy_window");
         conn.flush().expect("flush");
     }
+}
+
+/// The window `draw_cursor` draws the pointer with.
+fn find_cursor_window(conn: &RustConnection, root: Window) -> Option<Window> {
+    conn.query_tree(root)
+        .expect("query_tree")
+        .reply()
+        .expect("query_tree reply")
+        .children
+        .into_iter()
+        .find(|&window| {
+            conn.get_property(false, window, AtomEnum::WM_NAME, AtomEnum::STRING, 0, 64)
+                .expect("get_property")
+                .reply()
+                .is_ok_and(|reply| reply.value == b"drop-nested-session-cursor")
+        })
+}
+
+/// Moves the pointer the way a person does: as device motion (XTEST), which
+/// is what raw motion events - and so the drawn cursor - follow.
+fn move_pointer(conn: &RustConnection, root: Window, x: i16, y: i16) {
+    conn.xtest_fake_input(x11rb::protocol::xproto::MOTION_NOTIFY_EVENT, 0, 0, root, x, y, 0)
+        .expect("xtest_fake_input");
+    conn.flush().expect("flush");
+}
+
+fn cursor_image(conn: &RustConnection) -> GetCursorImageReply {
+    conn.xfixes_query_version(2, 0)
+        .expect("xfixes_query_version")
+        .reply()
+        .expect("xfixes_query_version reply");
+    conn.xfixes_get_cursor_image()
+        .expect("xfixes_get_cursor_image")
+        .reply()
+        .expect("xfixes_get_cursor_image reply")
+}
+
+#[test]
+fn the_cursor_is_drawn_into_the_session_and_follows_the_pointer() {
+    let Some(mut session) = session() else {
+        return;
+    };
+    session
+        .draw_cursor()
+        .unwrap_or_else(|e| panic!("draw_cursor: {e}"));
+    let (conn, screen) = connect(&session);
+    let root = screen.root;
+
+    // A game window, wearing the core font's watch, pointer over it.
+    let window = map_test_window(&conn, &screen);
+    wait_until_framed(&conn, window, root);
+    let font = conn.generate_id().expect("generate_id");
+    conn.open_font(font, b"cursor").expect("open_font");
+    let watch = conn.generate_id().expect("generate_id");
+    conn.create_glyph_cursor(watch, font, font, 150, 151, 0, 0, 0, 0xffff, 0xffff, 0xffff)
+        .expect("create_glyph_cursor");
+    conn.change_window_attributes(window, &ChangeWindowAttributesAux::new().cursor(watch))
+        .expect("change_window_attributes");
+    let (x, y, _, _) = absolute_geometry(&conn, window, root);
+    move_pointer(&conn, root, x + 100, y + 100);
+
+    let cursor_window = wait_until("the cursor window", || find_cursor_window(&conn, root));
+    let expected = cursor_image(&conn);
+    assert!(expected.width > 1, "the session's cursor is the watch");
+
+    // It wears exactly the session's cursor, hotspot on the pointer, on top
+    // of everything.
+    let at = |px: i16, py: i16| {
+        let (hx, hy) = (expected.xhot as i16, expected.yhot as i16);
+        wait_until("the cursor window at the pointer", || {
+            let attributes = conn
+                .get_window_attributes(cursor_window)
+                .expect("get_window_attributes")
+                .reply()
+                .expect("get_window_attributes reply");
+            let geometry = conn
+                .get_geometry(cursor_window)
+                .expect("get_geometry")
+                .reply()
+                .expect("get_geometry reply");
+            (attributes.map_state == MapState::VIEWABLE
+                && (geometry.x, geometry.y) == (px - hx, py - hy)
+                && (geometry.width, geometry.height) == (expected.width, expected.height))
+                .then_some(())
+        });
+    };
+    at(x + 100, y + 100);
+    let children = conn
+        .query_tree(root)
+        .expect("query_tree")
+        .reply()
+        .expect("query_tree reply")
+        .children;
+    assert_eq!(children.last(), Some(&cursor_window), "the cursor is on top");
+    let pixels = conn
+        .get_image(
+            x11rb::protocol::xproto::ImageFormat::Z_PIXMAP,
+            cursor_window,
+            0,
+            0,
+            expected.width,
+            expected.height,
+            !0,
+        )
+        .expect("get_image")
+        .reply()
+        .expect("get_image reply")
+        .data;
+    let drawn: Vec<u32> = pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&p| u32::from_le_bytes(p))
+        .collect();
+    assert_eq!(drawn, expected.cursor_image, "the drawn image is the session's cursor");
+
+    // It never takes a click: no input shape at all.
+    let input = conn
+        .shape_get_rectangles(cursor_window, x11rb::protocol::shape::SK::INPUT)
+        .expect("shape_get_rectangles")
+        .reply()
+        .expect("shape_get_rectangles reply");
+    assert!(input.rectangles.is_empty(), "the cursor window has no input area");
+
+    // It follows the pointer.
+    move_pointer(&conn, root, x + 250, y + 40);
+    at(x + 250, y + 40);
+
+    // A game hiding its pointer does it with an invisible cursor.
+    let empty = conn.generate_id().expect("generate_id");
+    conn.create_pixmap(1, empty, root, 1, 1).expect("create_pixmap");
+    let blank = conn.generate_id().expect("generate_id");
+    conn.create_cursor(blank, empty, empty, 0, 0, 0, 0, 0, 0, 0, 0)
+        .expect("create_cursor");
+    conn.change_window_attributes(window, &ChangeWindowAttributesAux::new().cursor(blank))
+        .expect("change_window_attributes");
+    conn.flush().expect("flush");
+    wait_until("the cursor window to be hidden", || {
+        let attributes = conn
+            .get_window_attributes(cursor_window)
+            .expect("get_window_attributes")
+            .reply()
+            .expect("get_window_attributes reply");
+        (attributes.map_state == MapState::UNMAPPED).then_some(())
+    });
 }

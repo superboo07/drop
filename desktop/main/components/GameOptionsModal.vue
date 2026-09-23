@@ -75,6 +75,7 @@
 <script setup lang="ts">
 import type { Component } from "vue";
 import {
+  LanguageIcon,
   RocketLaunchIcon,
   ServerIcon,
   TrashIcon,
@@ -84,6 +85,7 @@ import Launch from "./GameOptions/Launch.vue";
 import Updates from "./GameOptions/Updates.vue";
 import Storage from "./GameOptions/Storage.vue";
 import Proton from "./GameOptions/Proton.vue";
+import Translator from "./GameOptions/Translator.vue";
 import { ArrowPathIcon } from "@heroicons/vue/24/solid";
 import type { GameVersion } from "~/types";
 
@@ -128,6 +130,11 @@ const tabs: Array<{ name: string; icon: Component; page: Component }> = [
           name: "Proton",
           icon: h("img", { src: protonLogoSrc }),
           page: Proton,
+        },
+        {
+          name: "Translator",
+          icon: LanguageIcon,
+          page: Translator,
         },
       ]
     : []),

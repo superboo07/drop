@@ -68,7 +68,7 @@ The fix/pattern: call `remote::auth::request_capability("theCapability")` (hits 
 
 ### LunaTranslator + nested sessions (Linux)
 
-Windows games can be launched with [LunaTranslator](https://github.com/HIllya51/LunaTranslator) attached, hooking their text out of the Proton prefix as they're played. Two per-game toggles in `UserConfiguration` drive it (`lunaTranslator`, `nestedSession`), set from the Proton tab of a game's options; the global setup (which LunaTranslator to run, where the bridge is, which port) lives in `Settings` and `pages/settings/translation.vue`.
+Windows games can be launched with [LunaTranslator](https://github.com/HIllya51/LunaTranslator) attached, hooking their text out of the Proton prefix as they're played. Two per-game toggles in `UserConfiguration` drive it (`lunaTranslator`, `nestedSession`), set from the Translator tab of a game's options (shown alongside the Proton tab, for Windows games); the global setup (which LunaTranslator to run, where the bridge is, which port) lives in `Settings` and `pages/settings/translation.vue`.
 
 Drop never bundles or links any LunaTranslator code — it's GPL, Drop's desktop client is AGPL, and the only thing that would make that a question is linking. What actually happens is: the user supplies their own copy, we run it as an ordinary child process, and the two halves talk over TCP on loopback.
 

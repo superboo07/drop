@@ -61,6 +61,7 @@ export type GameVersion = {
     extraEnvVars: string;
     lunaTranslator: boolean;
     nestedSession: boolean;
+    locale: string | null;
   };
   setups: Array<{ platform: string }>;
   launches: Array<{ platform: string }>;

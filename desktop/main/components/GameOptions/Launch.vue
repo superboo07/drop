@@ -24,6 +24,7 @@
 
     <ProtonSelector v-model="model" v-if="$props.protonEnabled" />
     <HandlerSelector v-model="model" :game-id="$props.gameId" />
+    <LocaleSelector v-model="model" v-if="localeSupported" />
   </div>
 </template>
 
@@ -31,6 +32,11 @@
 import type { GameVersion } from "~/types";
 import ProtonSelector from "./ProtonSelector.vue";
 import HandlerSelector from "./HandlerSelector.vue";
+import LocaleSelector from "./LocaleSelector.vue";
+import { platform } from "@tauri-apps/plugin-os";
+
+// Applied as LANG/LC_ALL, which Windows games launched natively ignore.
+const localeSupported = platform() !== "windows";
 
 const model = defineModel<GameVersion["userConfiguration"]>({ required: true });
 

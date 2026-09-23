@@ -326,3 +326,40 @@ pub fn list_winetricks_verbs() -> Result<Vec<WinetricksVerb>, ProcessError> {
 
     Ok(verbs)
 }
+
+// Locales the host actually has generated (`locale -a`), so the per-game
+// locale picker can warn when a native game's locale won't take effect.
+// Proton games don't need this - umu-run's container generates its own.
+// Normalised to e.g. "ja_JP.UTF-8" since glibc lists "ja_JP.utf8".
+#[tauri::command]
+pub fn list_system_locales() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        Vec::new()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut command = std::process::Command::new("locale");
+        command.arg("-a");
+        #[cfg(target_os = "linux")]
+        sanitize_external_command(&mut command);
+
+        let Ok(output) = command.output() else {
+            return Vec::new();
+        };
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(|v| match v.split_once('.') {
+                Some((name, codeset))
+                    if codeset.eq_ignore_ascii_case("utf8")
+                        || codeset.eq_ignore_ascii_case("utf-8") =>
+                {
+                    format!("{name}.UTF-8")
+                }
+                _ => v.to_owned(),
+            })
+            .collect()
+    }
+}

@@ -284,6 +284,7 @@ pub fn run() {
             run_winecfg,
             get_launch_options,
             get_process_handlers,
+            list_system_locales,
             #[cfg(target_os = "linux")]
             ::process::compat::fetch_proton_paths,
             #[cfg(target_os = "linux")]

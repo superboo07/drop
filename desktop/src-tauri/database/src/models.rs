@@ -88,6 +88,7 @@ pub mod data {
                 extra_env_vars: String::new(),
                 luna_translator: false,
                 nested_session: false,
+                locale: None,
             }
         }
 
@@ -120,6 +121,13 @@ pub mod data {
             // Deck game mode). See the `nested_session` crate.
             #[serde(default)]
             pub nested_session: bool,
+            // Locale to run this game under (e.g. "ja_JP.UTF-8"), exported
+            // as LANG/LC_ALL at launch - Wine derives the Windows system
+            // locale and ANSI codepage from these, which is what Japanese
+            // visual novels need to not render mojibake. None keeps the
+            // host's own locale.
+            #[serde(default)]
+            pub locale: Option<String>,
         }
 
         impl Default for UserConfiguration {

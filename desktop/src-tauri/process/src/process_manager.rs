@@ -726,6 +726,20 @@ impl ProcessManager<'_> {
         let mut command = {
             let mut command = Command::new(launch_parameters.0.command);
             command.args(launch_parameters.0.args);
+            // Set before the launch string's own env assignments so that
+            // an explicit LANG/LC_ALL in the launch template or extra env
+            // vars still wins. Wine/Proton pick the Windows locale up from
+            // these; umu-run's container generates the locale if the host
+            // doesn't have it, native games need it installed on the host.
+            #[cfg(not(target_os = "windows"))]
+            if let Some(locale) = game_version
+                .user_configuration
+                .locale
+                .as_deref()
+                .filter(|v| !v.is_empty())
+            {
+                command.env("LANG", locale).env("LC_ALL", locale);
+            }
             for parts in launch_parameters
                 .0
                 .env

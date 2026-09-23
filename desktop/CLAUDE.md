@@ -106,6 +106,8 @@ The bridge ships inside the LunaTranslator AppImage, so Drop extracts its own co
 
 Both LunaTranslator and the nested session hang off `RunningProcess.luna`, purely for its `Drop` impl: when the game exits or is killed, the field drops and takes them down in order (LunaTranslator first, then the session — the other way round just makes LunaTranslator crash instead of exit). The session itself stops tint2, picom, openbox, then the X server.
 
+The nested X server's readiness comes from `-displayfd` (it writes the display number once it's accepting connections), not from its socket file appearing — the socket exists well before that (~130ms idle, seconds under load), and an early client just blocks, with no timeout.
+
 **Don't rebuild the AppImage to test a session change** — it takes ten minutes. `bash desktop/vendor/build.sh` takes about two (only needed after touching `desktop/vendor/`), and config changes need nothing rebuilt but the crate:
 
 ```bash

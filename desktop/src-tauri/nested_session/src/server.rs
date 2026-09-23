@@ -1,7 +1,12 @@
 use std::{
     collections::BTreeSet,
     ffi::OsString,
-    os::unix::process::CommandExt as _,
+    fs::File,
+    io::Read as _,
+    os::{
+        fd::{AsRawFd as _, FromRawFd as _, OwnedFd, RawFd},
+        unix::process::CommandExt as _,
+    },
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -44,6 +49,9 @@ pub struct XServer {
     pub display: String,
     display_number: u32,
     child: Child,
+    /// Read end of the server's `-displayfd`: it writes the display number
+    /// here once it's accepting connections. Only needed until then.
+    ready: Option<File>,
 }
 
 impl XServer {
@@ -80,6 +88,8 @@ impl XServer {
 
     fn start_on(display_number: u32, width: u16, height: u16) -> Result<Self, NestedSessionError> {
         let display = format!(":{display_number}");
+        let (ready_read, ready_write) = ready_pipe()?;
+        let ready_fd = ready_write.as_raw_fd().to_string();
 
         // gamescope advertises its own compositor separately from whatever it
         // is itself nested inside, and in its session WAYLAND_DISPLAY is not
@@ -106,6 +116,8 @@ impl XServer {
                 // Keep the server alive across the gap between the game
                 // exiting and LunaTranslator being torn down (and vice versa).
                 "-noreset",
+                "-displayfd",
+                &ready_fd,
             ]);
             command
         } else {
@@ -117,6 +129,8 @@ impl XServer {
                 &format!("{width}x{height}"),
                 "-resizeable",
                 "-noreset",
+                "-displayfd",
+                &ready_fd,
             ]);
             command
         };
@@ -130,36 +144,64 @@ impl XServer {
         sanitize_external_command(&mut command);
 
         die_with_parent(&mut command);
+        inherit_fd(&mut command, ready_write.as_raw_fd());
 
         info!("starting nested X server on {display} ({width}x{height})");
         let child = command.spawn()?;
+        // The server holds its own copy now; ours has to go, or a server that
+        // dies during startup would never close the pipe.
+        drop(ready_write);
         let mut server = XServer {
             display,
             display_number,
             child,
+            ready: Some(ready_read),
         };
         server.wait_until_ready()?;
         Ok(server)
     }
 
-    /// Waits for the server's socket to appear, giving up if the server exits
-    /// first (e.g. Xwayland refusing to start because the compositor went
-    /// away) rather than sitting out the whole timeout.
+    /// Waits for the server to report, over `-displayfd`, that it is
+    /// accepting connections - giving up if it exits first (e.g. Xwayland
+    /// refusing to start because the compositor went away) or doesn't get
+    /// there in `SERVER_START_TIMEOUT`.
+    ///
+    /// Not "the socket file exists": the server creates that early in its
+    /// startup, and under a nested compositor it can then spend a long time
+    /// (seconds, on a loaded Steam Deck) getting its output set up before it
+    /// serves anyone. A client that connects in that gap doesn't fail - it
+    /// blocks, with no timeout, and with it whatever thread started the
+    /// session.
     fn wait_until_ready(&mut self) -> Result<(), NestedSessionError> {
-        let socket = socket_path(&self.display);
+        let mut ready = self.ready.take().expect("waited for readiness twice");
+        let mut reply = Vec::new();
         let deadline = Instant::now() + SERVER_START_TIMEOUT;
         while Instant::now() < deadline {
             if let Some(status) = self.child.try_wait()? {
                 warn!("nested X server exited during startup with {status}");
                 return Err(NestedSessionError::ServerTimeout(self.display.clone()));
             }
-            if socket.exists() {
-                // The socket exists a moment before the server is listening
-                // on it; a short settle beats a connect-retry loop here.
-                sleep(Duration::from_millis(150));
+            if !poll_readable(&ready, Duration::from_millis(50))? {
+                continue;
+            }
+            let mut chunk = [0u8; 16];
+            match ready.read(&mut chunk)? {
+                // Closed without a word: the server is on its way out, which
+                // the next try_wait will report.
+                0 => sleep(Duration::from_millis(50)),
+                read => reply.extend_from_slice(&chunk[..read]),
+            }
+            if reply.ends_with(b"\n") {
+                let reported = String::from_utf8_lossy(&reply);
+                if reported.trim() != self.display_number.to_string() {
+                    warn!(
+                        "nested X server was started on {} but reports display :{}",
+                        self.display,
+                        reported.trim()
+                    );
+                }
                 return Ok(());
             }
-            sleep(Duration::from_millis(50));
         }
         Err(NestedSessionError::ServerTimeout(self.display.clone()))
     }
@@ -184,11 +226,51 @@ impl Drop for XServer {
     }
 }
 
-fn socket_path(display: &str) -> PathBuf {
-    PathBuf::from(format!(
-        "/tmp/.X11-unix/X{}",
-        display.trim_start_matches(':')
-    ))
+/// The pipe behind `-displayfd`. Both ends are close-on-exec; the write end
+/// is made inheritable only in the server's own child (see `inherit_fd`), so
+/// no other process Drop spawns meanwhile holds it open.
+fn ready_pipe() -> Result<(File, OwnedFd), NestedSessionError> {
+    let mut fds: [RawFd; 2] = [-1; 2];
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let (read, write) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+    Ok((File::from(read), write))
+}
+
+/// Lets `fd` survive the exec into `command`.
+fn inherit_fd(command: &mut Command, fd: RawFd) {
+    unsafe {
+        command.pre_exec(move || {
+            if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+/// Whether `file` has something to read (or has been closed) within
+/// `timeout`.
+fn poll_readable(file: &File, timeout: Duration) -> std::io::Result<bool> {
+    let mut poll = libc::pollfd {
+        fd: file.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let timeout = libc::c_int::try_from(timeout.as_millis()).unwrap_or(libc::c_int::MAX);
+    match unsafe { libc::poll(&mut poll, 1, timeout) } {
+        -1 => {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                Ok(false)
+            } else {
+                Err(error)
+            }
+        }
+        0 => Ok(false),
+        _ => Ok(true),
+    }
 }
 
 /// Claims a display number with neither a socket nor a lock file, and not

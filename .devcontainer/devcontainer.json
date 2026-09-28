@@ -1,0 +1,97 @@
+{
+  "name": "drop",
+
+  // Compose rather than a bare image, because the game library is mounted from
+  // a path that differs on every machine (.env is how that is said once) and
+  // Postgres runs beside it as its own service. Copy .env.example (top of the
+  // repository) to .env and fill it in.
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "dev",
+  "runServices": ["dev", "db"],
+  "workspaceFolder": "/workspaces/drop",
+  "shutdownAction": "stopCompose",
+
+  // Root, matching the rootless host daemon: container root maps to the host
+  // user, so files written into the bind-mounted tree stay owned by you. The
+  // Wayland bind goes to /run/user/0 to match.
+  "remoteUser": "root",
+  "containerUser": "root",
+
+  "containerEnv": {
+    // Where docker-compose.yml put the host's Wayland socket. The name is
+    // fixed because the bind renames whatever the host calls its socket.
+    "XDG_RUNTIME_DIR": "/run/user/0",
+    "WAYLAND_DISPLAY": "wayland-0",
+
+    // DROP_LIBRARY_DIR is NOT here. It comes from .env, which compose reads,
+    // so docker-compose.yml sets it in its `environment:` block.
+
+    // A cargo build directory of the container's own, for every crate in the
+    // tree (torrential, cli, droplet, desktop/src-tauri). The host builds into
+    // each crate's target/ with a different toolchain and libraries; sharing
+    // would make each side invalidate -- or worse, link -- the other's objects.
+    "CARGO_TARGET_DIR": "/workspaces/drop/target-container",
+
+    // pnpm's store on its volume (docker-compose.yml), not next to the project
+    // where pnpm would otherwise put it when home is on another filesystem.
+    "npm_config_store_dir": "/root/.local/share/pnpm/store",
+
+    // git's global config lives on a volume (docker-compose.yml), not in the
+    // container's filesystem and not copied from the host. This is what points
+    // git at it -- and it is also what makes the Dev Containers extension's own
+    // copy of the host ~/.gitconfig irrelevant, which matters because that copy
+    // names a signing key at a host path that does not exist in here and every
+    // commit then dies with "Couldn't load public key".
+    //
+    // Your identity and your key are yours to put in, once, from inside the
+    // container. They persist across rebuilds because the volume does.
+    "GIT_CONFIG_GLOBAL": "/root/.config/git/config",
+
+    // Keep all Claude Code state (credentials, .claude.json, projects/) in the
+    // one volume, so a rebuild does not ask for a login again.
+    "CLAUDE_CONFIG_DIR": "/root/.claude"
+  },
+
+  // The server's `pnpm dev` (server/nuxt.config.ts devServer.port).
+  "forwardPorts": [4000],
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // server/ and the Nuxt layers (as in server/.devcontainer/).
+        "lokalise.i18n-ally",
+        "esbenp.prettier-vscode",
+        "Prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+        "Vue.volar",
+        "arktypeio.arkdark",
+        "EditorConfig.EditorConfig",
+        "dbaeumer.vscode-eslint",
+        // torrential, cli, libraries/droplet*, desktop/src-tauri.
+        "rust-lang.rust-analyzer",
+        "tauri-apps.tauri-vscode",
+        "tamasfe.even-better-toml",
+        // backend/.
+        "golang.go",
+        "anthropic.claude-code"
+      ],
+      "settings": {
+        "[json]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[jsonc]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }
+      }
+    }
+  },
+
+  // **Runs on the host, before the container exists.** Compose looks for .env
+  // beside the compose file; the project keeps it at the top of the tree. A link
+  // rather than a copy so there is one .env, made only when there is one to
+  // link to. Both paths are gitignored by the `*.env` rule.
+  "initializeCommand": "bash -c '[ -f .env ] && ln -sfn ../.env .devcontainer/.env || true'",
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "waitFor": "postCreateCommand"
+}

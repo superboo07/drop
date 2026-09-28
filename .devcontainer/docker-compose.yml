@@ -1,0 +1,149 @@
+# The devcontainer, plus the Postgres the server needs. Compose rather than a
+# plain image because the game library is mounted from a path that differs per
+# machine (compose reads .env for it) and because Postgres is its own service.
+# .env lives at the top of the repository; devcontainer.json's initializeCommand
+# links it beside this file before any of this runs. See .env.example.
+#
+# An unset variable falls back to a path that exists and holds nothing, so the
+# container still comes up and post-create reports the missing library
+# explicitly.
+#
+# (server/.devcontainer/ is upstream's own, server-only devcontainer. It is left
+# as it is so upstream syncs stay clean; this one covers the whole monorepo.)
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sleep infinity
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+    environment:
+      DROP_LIBRARY_DIR: ${DROP_LIBRARY_DIR:-}
+      # The db service below, by its compose name. Set here, in the process
+      # environment, so it wins over the host-oriented 127.0.0.1 URL in
+      # server/.env: dotenv (prisma.config.ts) and Nuxt never override a
+      # variable that is already set.
+      DATABASE_URL: postgres://drop:drop@db:5432/drop
+      # `pnpm dev` listens on 4000 (server/nuxt.config.ts devServer.port).
+      EXTERNAL_URL: http://localhost:4000
+
+    volumes:
+      - ..:/workspaces/drop:cached
+
+      # **The user's own game library.** Drop ships no games; the server scans
+      # this /{game}/{version}/... tree (server/server/internal/library/README.md).
+      # Mounted at its own path so one value in .env is correct on the host and
+      # in here alike; post-create.sh links server/.data/library (the server's
+      # default LIBRARY) to it. Read-only by default: an input, never an output.
+      - ${DROP_LIBRARY_DIR:-/var/empty}:${DROP_LIBRARY_DIR:-/var/empty}:${DROP_MOUNT_MODE:-ro}
+
+      # The host's Wayland socket, so `pnpm tauri dev` and the nested session's
+      # rootful Xwayland can open a window on your desktop. Renamed to a fixed
+      # name; containerEnv points WAYLAND_DISPLAY at it. Deliberately no X11
+      # socket and no Xauthority cookie: GTK and the nested session both speak
+      # Wayland, and the tests use a headless Weston instead (post-create.sh).
+      # Also deliberately no session D-Bus: it reaches the host's keyring.
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/${WAYLAND_DISPLAY:-wayland-0}:/run/user/0/wayland-0
+
+      # **Gamepads.** The client's frontend navigates by gamepad (the Deck's
+      # game mode: main/composables/use-spatial-gamepad-nav.ts) through the Web
+      # Gamepad API, which WebKitGTK reads from evdev via libmanette. The
+      # directory is bound so a pad plugged in later appears; udev's database
+      # is how libmanette tells a pad from a keyboard.
+      - /dev/input:/dev/input
+      - /run/udev:/run/udev:ro
+
+      # **Not shared with the host's checkout**: every node_modules and .nuxt.
+      # pnpm's store here can never be the host's, and on a store mismatch pnpm
+      # purges node_modules before reinstalling (desktop/build_appimage.sh hit
+      # exactly this), so a shared node_modules would wipe the host's installs.
+      # .nuxt holds absolute paths, which differ between the host and
+      # /workspaces/drop. One volume per pnpm workspace member
+      # (pnpm-workspace.yaml) plus desktop/main, which build.mjs installs itself.
+      - drop-nm-root:/workspaces/drop/node_modules
+      - drop-nm-server:/workspaces/drop/server/node_modules
+      - drop-nm-base:/workspaces/drop/libraries/base/node_modules
+      - drop-nm-docs:/workspaces/drop/sites/docs/node_modules
+      - drop-nm-promo:/workspaces/drop/sites/promo/node_modules
+      - drop-nm-desktop:/workspaces/drop/desktop/node_modules
+      - drop-nm-desktop-main:/workspaces/drop/desktop/main/node_modules
+      - drop-nuxt-server:/workspaces/drop/server/.nuxt
+      - drop-nuxt-base:/workspaces/drop/libraries/base/.nuxt
+      - drop-nuxt-desktop-main:/workspaces/drop/desktop/main/.nuxt
+      # The pnpm store and cargo's download caches, so a rebuilt container does
+      # not fetch every package and crate again. (Build output is not here: it
+      # goes to target-container/ in the tree, CARGO_TARGET_DIR.)
+      - drop-pnpm-store:/root/.local/share/pnpm/store
+      - drop-cargo-registry:/usr/local/cargo/registry
+      - drop-cargo-git:/usr/local/cargo/git
+
+      # Shell history across rebuilds.
+      - drop-bashhistory:/commandhistory
+
+      # **No credential is bound in from the host.** No ~/.ssh, no ~/.gitconfig,
+      # no Claude login: each of those is a volume the container owns and you
+      # fill in once, from inside. A key generated or pasted in here stays here
+      # and survives a rebuild, and a host key is never exposed to anything
+      # running in the container. The one exception is your skills directory,
+      # below, which is read-only and holds no secret.
+      #
+      # git's global config is a volume too, and containerEnv points
+      # GIT_CONFIG_GLOBAL into it -- which is also what makes the copy of the
+      # host's ~/.gitconfig that the Dev Containers extension drops in inert.
+      - drop-ssh:/root/.ssh
+      - drop-gitconfig:/root/.config/git
+      # Claude Code's credentials, settings and per-project history.
+      - drop-claude:/root/.claude
+      # Your own skills, read-only, over the volume above. Docker mounts the
+      # shorter path first, so this lands inside the volume.
+      - ${HOME}/.claude/skills:/root/.claude/skills:ro
+
+    # The GPU, for WebKit's renderer and the nested session's Xwayland (glamor).
+    # Without it Mesa falls back to llvmpipe.
+    devices:
+      - /dev/dri:/dev/dri
+    # Docker denies character devices it was not given; 13 is the input major
+    # (evdev and joystick nodes). Without it every gamepad open is EPERM.
+    device_cgroup_rules:
+      - "c 13:* rmw"
+
+  # The same Postgres as server/dev-tools/compose.yml. Not published on a host
+  # port: only the dev service talks to it, and that way it cannot collide with
+  # a host-side instance of that compose file on 5432.
+  db:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: drop
+      POSTGRES_PASSWORD: drop
+      POSTGRES_DB: drop
+    volumes:
+      - drop-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drop -d drop"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  drop-nm-root:
+  drop-nm-server:
+  drop-nm-base:
+  drop-nm-docs:
+  drop-nm-promo:
+  drop-nm-desktop:
+  drop-nm-desktop-main:
+  drop-nuxt-server:
+  drop-nuxt-base:
+  drop-nuxt-desktop-main:
+  drop-pnpm-store:
+  drop-cargo-registry:
+  drop-cargo-git:
+  drop-bashhistory:
+  drop-ssh:
+  drop-gitconfig:
+  drop-claude:
+  drop-pgdata:

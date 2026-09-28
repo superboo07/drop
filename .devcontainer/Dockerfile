@@ -216,4 +216,19 @@ RUN mkdir -p /root/.ssh /root/.config/git /root/.claude /root/.local/share/pnpm/
 RUN mkdir -p /commandhistory && touch /commandhistory/.bash_history
 ENV HISTFILE=/commandhistory/.bash_history
 
+# The to-do list and command reference (welcome.sh) in every interactive
+# terminal -- post-create output only reaches a creation log nobody reads. The
+# whole thing the first time in a container, only the to-do items after that.
+# Non-interactive shells (`devcontainer exec claude`, lifecycle hooks) skip it.
+RUN cat >> /root/.bashrc <<'SH'
+
+if [[ $- == *i* ]] && [ -f /workspaces/drop/.devcontainer/welcome.sh ]; then
+	if [ -e /tmp/.welcome-shown ]; then
+		bash /workspaces/drop/.devcontainer/welcome.sh --brief
+	else
+		bash /workspaces/drop/.devcontainer/welcome.sh; touch /tmp/.welcome-shown
+	fi
+fi
+SH
+
 ENV DEVCONTAINER=true

@@ -43,4 +43,16 @@ if [ -z "$DEVCONTAINER_CLI" ]; then
 fi
 
 $DEVCONTAINER_CLI up --workspace-folder .
+
+# What still needs doing and how to work in here (welcome.sh). post-create's
+# output never gets this far -- it is in the build log above, and a reused
+# container does not run it at all. To stderr so `claude -p` output stays clean.
+# When there is a to-do and a person at the terminal, wait: Claude's UI would
+# otherwise push it out of view straight away.
+status=0
+$DEVCONTAINER_CLI exec --workspace-folder . bash .devcontainer/welcome.sh >&2 || status=$?
+if [ "$status" = 10 ] && [ -t 0 ] && [ -t 2 ]; then
+	read -r -p "Press Enter to start Claude... " _ >&2 || true
+fi
+
 exec $DEVCONTAINER_CLI exec --workspace-folder . claude "$@"

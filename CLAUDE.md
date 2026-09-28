@@ -47,6 +47,7 @@ Root `proto/`-adjacent protobuf definitions live in `torrential/proto/*.proto` a
 ### Dev container
 `.devcontainer/` (start it with `.devcontainer/claude.sh` or "Reopen in Container"): Debian trixie with Node LTS + pnpm, Rust nightly, Go and the Tauri/nested-session runtime, plus a `db` Postgres service (`DATABASE_URL` set). Root `.env` (gitignored, `DROP_LIBRARY_DIR`) mounts your game library read-only at its own path; post-create links `server/.data/library`. It opens windows on the host's Wayland and reads gamepads. `node_modules`/`.nuxt` are container volumes and cargo builds go to `target-container/`, so nothing is shared with host-side installs or builds.
 No host credentials are bound: ssh, git config and Claude state are volumes.
+Setup notices (missing library, git identity/signing key) and the command list live in `.devcontainer/welcome.sh`, which `claude.sh` and every new terminal show; `post-create.sh` only performs actions, since its output never reaches you.
 
 ### Root
 - Install all workspace deps: `pnpm install`

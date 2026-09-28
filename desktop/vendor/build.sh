@@ -86,8 +86,10 @@ for module in openbox picom tint2; do
     cp -a "$SRC/$module" "$BUILD/$module"
     rm -f "$BUILD/$module/.git"
 done
-# picom needs libconfig >= 1.7 and mantic ships 1.5, so picom falls back to
-# its libconfig subproject (statically linked). Its wrap would git-clone that
+# The builder image has no libconfig-dev (the vendored one used to be needed
+# because Ubuntu 23.10 shipped 1.5 and picom needs >= 1.7; it stays so picom
+# keeps linking it statically), so picom falls back to its libconfig
+# subproject. Its wrap would git-clone that
 # at build time; the libconfig submodule, pinned to the same revision as
 # picom's subprojects/libconfig.wrap, is put where meson looks first instead.
 cp -a "$SRC/libconfig" "$BUILD/picom/subprojects/libconfig"

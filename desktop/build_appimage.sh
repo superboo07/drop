@@ -198,6 +198,19 @@ APPDIR="$WORK_DIR/squashfs-root"
 
 echo ">>> Injecting vendored umu-run/winetricks..."
 (cd "$WORK_DIR" && "$APPIMAGE" --appimage-extract >/dev/null)
+# linuxdeploy bundles this image's libwayland-*, but Mesa's libEGL is on the
+# AppImage excludelist and always comes from the host. A host with a newer Mesa
+# then loads its libEGL against our older libwayland-client, and WebKit's
+# WebProcess aborts on launch with "Could not create default EGL display:
+# EGL_BAD_PARAMETER" - reproduced by putting 24.04's libwayland 1.22 back
+# against a host with Mesa 26 / libwayland 1.26: blank window and that abort;
+# without it the same build renders. libwayland is part of that same
+# host graphics stack - every system that can run GTK 3 has it - so take it
+# from the host too. (This crash was once blamed on WebKitGTK itself and
+# "fixed" by pinning an old one; don't - see Dockerfile.build.)
+echo ">>> Dropping bundled libwayland (must match the host's Mesa)..."
+rm -f "$APPDIR"/usr/lib/libwayland-*.so*
+
 mkdir -p "$APPDIR/usr/libexec/drop-tools"
 cp /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks "$APPDIR/usr/libexec/drop-tools/"
 

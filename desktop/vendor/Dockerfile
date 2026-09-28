@@ -5,14 +5,9 @@
 # Not meant to be run directly - build.sh handles everything:
 #   bash desktop/vendor/build.sh
 #
-# Same base as ../Dockerfile.build (see there for why it's mantic) so the
-# binaries link against the same glibc as the rest of the AppImage.
-FROM ubuntu:23.10
-
-RUN sed -i \
-        -e 's|http://archive.ubuntu.com/ubuntu|http://old-releases.ubuntu.com/ubuntu|g' \
-        -e 's|http://security.ubuntu.com/ubuntu|http://old-releases.ubuntu.com/ubuntu|g' \
-        /etc/apt/sources.list
+# Same base as ../Dockerfile.build so the binaries link against the same
+# glibc as the rest of the AppImage.
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 

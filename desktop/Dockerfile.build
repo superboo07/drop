@@ -7,18 +7,16 @@
 # runs `pnpm tauri build` inside it. Output lands in the repo root as
 # Drop.Desktop.Client_<version>_amd64.AppImage (or similar, per tauri-bundler).
 #
-# Base is Ubuntu 23.10 (mantic), not the more usual 22.04/24.04, specifically
-# for its webkit2gtk-4.1 version: every WebKitGTK past 2.44 hits an unresolved
-# upstream EGL/Wayland regression ("Could not create default EGL display:
-# EGL_BAD_PARAMETER") that aborts the WebProcess on launch. 23.10 shipped
-# 2.44.2 — new enough for the webkit2gtk API symbols wry/tauri need, old
-# enough to predate the regression. Mantic is EOL, hence old-releases.ubuntu.com.
-FROM ubuntu:23.10
-
-RUN sed -i \
-        -e 's|http://archive.ubuntu.com/ubuntu|http://old-releases.ubuntu.com/ubuntu|g' \
-        -e 's|http://security.ubuntu.com/ubuntu|http://old-releases.ubuntu.com/ubuntu|g' \
-        /etc/apt/sources.list
+# Base is Ubuntu 24.04 LTS: its glibc (2.39) is the floor the AppImage runs
+# on, old enough for SteamOS and current LTS distros, and it keeps receiving
+# WebKitGTK security updates. WebKitGTK is a browser engine fed content from
+# a remote server, so it must stay current; never pin an old one to dodge a
+# bug. (The build used to be pinned to EOL Ubuntu 23.10 for WebKitGTK 2.44 on
+# the belief that later releases abort with "Could not create default EGL
+# display: EGL_BAD_PARAMETER". That crash came from the AppImage bundling the
+# build distro's libwayland next to the host's Mesa - build_appimage.sh now
+# strips those, see step 4 there.)
+FROM ubuntu:24.04
 
 # Pinned versions of everything this image fetches by URL, hoisted out of the
 # RUN lines below so there's one obvious place to bump them and nothing is
@@ -53,8 +51,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
         sh -s -- -y --default-toolchain nightly --profile minimal
 
-# Node + pnpm — installed from upstream tarball rather than nodesource, since
-# nodesource's setup script doesn't recognize EOL codenames like mantic.
+# Node + pnpm — installed from the upstream tarball so the version is pinned
+# here rather than by whatever the distro or nodesource currently ships.
 RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
         | tar -xJ -C /usr/local --strip-components=1 -f - \
     && corepack enable \

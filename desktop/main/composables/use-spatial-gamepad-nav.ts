@@ -12,6 +12,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const AXIS_THRESHOLD = 0.5;
+const AXIS_RELEASE = 0.3;
 const REPEAT_DELAY_MS = 400;
 const REPEAT_RATE_MS = 120;
 
@@ -48,60 +49,89 @@ function getFocusableCandidates(): HTMLElement[] {
   );
 }
 
+// A rect's edges along the direction of travel ("start" is the near edge,
+// "end" the far one, both increasing in that direction) and across it, so
+// one scoring routine serves all four directions.
+function directionalEdges(rect: DOMRect, direction: Direction) {
+  switch (direction) {
+    case "down":
+      return { start: rect.top, end: rect.bottom, crossStart: rect.left, crossEnd: rect.right };
+    case "up":
+      return { start: -rect.bottom, end: -rect.top, crossStart: rect.left, crossEnd: rect.right };
+    case "right":
+      return { start: rect.left, end: rect.right, crossStart: rect.top, crossEnd: rect.bottom };
+    case "left":
+      return { start: -rect.right, end: -rect.left, crossStart: rect.top, crossEnd: rect.bottom };
+  }
+}
+
+// Edge-based rather than center-based: comparing centers orders a tall
+// element beside a short one by its middle instead of where it visually
+// starts, so moving down would focus the short one first, then "jump back"
+// to the tall one, then carry on past -- the selector skipping something
+// and returning to it.
 function findNextCandidate(
   current: HTMLElement,
   direction: Direction,
   candidates: HTMLElement[],
 ): HTMLElement | null {
-  const from = current.getBoundingClientRect();
-  const fromCenter = { x: from.left + from.width / 2, y: from.top + from.height / 2 };
+  const from = directionalEdges(current.getBoundingClientRect(), direction);
+  const fromCross = (from.crossStart + from.crossEnd) / 2;
 
   let best: HTMLElement | null = null;
   let bestScore = Infinity;
+  let bestLoose: HTMLElement | null = null;
+  let bestLooseScore = Infinity;
 
   for (const el of candidates) {
     if (el === current) continue;
-    const rect = el.getBoundingClientRect();
-    const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    const dx = center.x - fromCenter.x;
-    const dy = center.y - fromCenter.y;
+    const to = directionalEdges(el.getBoundingClientRect(), direction);
+    const centerCross = Math.abs((to.crossStart + to.crossEnd) / 2 - fromCross);
+    const crossGap = Math.max(0, to.crossStart - from.crossEnd, from.crossStart - to.crossEnd);
 
-    let primary: number;
-    let cross: number;
-    switch (direction) {
-      case "up":
-        if (dy >= -1) continue;
-        primary = -dy;
-        cross = Math.abs(dx);
-        break;
-      case "down":
-        if (dy <= 1) continue;
-        primary = dy;
-        cross = Math.abs(dx);
-        break;
-      case "left":
-        if (dx >= -1) continue;
-        primary = -dx;
-        cross = Math.abs(dy);
-        break;
-      case "right":
-        if (dx <= 1) continue;
-        primary = dx;
-        cross = Math.abs(dy);
-        break;
+    // Strictly ahead: both edges move forward. Excludes elements beside (or
+    // nested inside) the current one -- those belong to the other axis.
+    if (to.start > from.start + 1 && to.end > from.end + 1) {
+      // Distance along the direction dominates, being off to the side costs
+      // double, and among equally near, overlapping candidates the one
+      // closest to straight ahead wins.
+      const primaryGap = Math.max(0, to.start - from.end);
+      const score = primaryGap + crossGap * 2 + centerCross * 0.1;
+      if (score < bestScore) {
+        bestScore = score;
+        best = el;
+      }
+      continue;
     }
 
-    // Weight the cross-axis offset heavier than the primary-axis distance so
-    // moving "down" prefers the element directly below over one further away
-    // but more precisely aligned diagonally.
-    const score = primary + cross * 2;
-    if (score < bestScore) {
-      bestScore = score;
-      best = el;
+    // Fallback for overlapping layouts where nothing is strictly ahead: a
+    // center further along still counts, so nothing becomes unreachable.
+    const primary = (to.start + to.end) / 2 - (from.start + from.end) / 2;
+    if (primary <= 1) continue;
+    const score = primary + centerCross * 2;
+    if (score < bestLooseScore) {
+      bestLooseScore = score;
+      bestLoose = el;
     }
   }
 
-  return best;
+  return best ?? bestLoose;
+}
+
+// An open HeadlessUI Menu or Listbox keeps focus on its container
+// (role="menu"/"listbox") and highlights items itself in response to arrow
+// keys -- the items are tabindex="-1", so spatial navigation can't see them
+// and would instead move focus out, which closes the popup. While one has
+// focus, the pad is translated into the keys it already understands.
+function focusedPopup(): HTMLElement | null {
+  const active = document.activeElement as HTMLElement | null;
+  return active?.closest<HTMLElement>('[role="menu"], [role="listbox"]') ?? null;
+}
+
+function sendKey(target: Element, key: string) {
+  target.dispatchEvent(
+    new KeyboardEvent("keydown", { key, code: key, bubbles: true, cancelable: true }),
+  );
 }
 
 function markGamepadActive() {
@@ -115,6 +145,14 @@ function focusInitial() {
 
 function move(direction: Direction) {
   markGamepadActive();
+  const popup = focusedPopup();
+  if (popup) {
+    // Both widgets list their items vertically; left/right have no meaning.
+    if (direction === "up") sendKey(popup, "ArrowUp");
+    if (direction === "down") sendKey(popup, "ArrowDown");
+    return;
+  }
+
   const active = document.activeElement;
   const candidates = getFocusableCandidates();
 
@@ -129,6 +167,13 @@ function move(direction: Direction) {
 
 function confirm() {
   markGamepadActive();
+  const popup = focusedPopup();
+  if (popup) {
+    // Picks the highlighted item, as a keyboard user would.
+    sendKey(popup, "Enter");
+    return;
+  }
+
   const active = document.activeElement as HTMLElement | null;
   if (!active || active === document.body) {
     focusInitial();
@@ -137,20 +182,19 @@ function confirm() {
   active.click();
 }
 
-// Vue Router's web history stamps history.state.position on every
-// navigation (starting from whatever window.history.length already was when
-// the router was created). Captured once, synchronously, before app.vue's
-// initial navigation runs, so cancel() can tell "the app's first page" apart
-// from "a page we actually navigated to" -- router.back() from the former
-// walks past the SPA's own history into a blank pre-render state with
-// nothing mounted, softlocking the user on a white screen.
-let baselineHistoryPosition = 0;
-if (typeof window !== "undefined") {
-  baselineHistoryPosition = (window.history.state as { position?: number } | null)
-    ?.position ?? 0;
-}
+// router.back() is async (it lands on popstate), so another B press before
+// then would queue a second history step from the same page and overshoot.
+let backPending = false;
 
 function cancel() {
+  const popup = focusedPopup();
+  if (popup) {
+    // Closes just the popup (focus returns to its button), rather than the
+    // dialog or page it's on.
+    sendKey(popup, "Escape");
+    return;
+  }
+
   const root = getNavRoot();
   if (root !== document) {
     // A dialog is open: ask it to close the way keyboard users already do.
@@ -168,12 +212,21 @@ function cancel() {
     return;
   }
 
-  const currentPosition =
-    (window.history.state as { position?: number } | null)?.position ?? 0;
-  if (currentPosition <= baselineHistoryPosition) {
-    // Already on the app's first page -- nothing to go back to.
-    return;
-  }
+  if (backPending) return;
+
+  // Vue Router records the previous in-app location in history.state.back:
+  // null on the first entry, and "/" is the blank bootstrap page
+  // (pages/index.vue) that would leave the user on a white screen.
+  const back = (window.history.state as { back?: string | null } | null)?.back;
+  if (!back || router.resolve(back).path === "/") return;
+
+  backPending = true;
+  const done = () => {
+    backPending = false;
+    window.removeEventListener("popstate", done);
+  };
+  window.addEventListener("popstate", done);
+  setTimeout(done, 1000);
   router.back();
 }
 
@@ -216,40 +269,49 @@ export function useSpatialGamepadNavigation() {
     const pads = navigator.getGamepads?.() ?? [];
     const now = performance.now();
 
+    // Merge every connected pad into one state before edge-detecting. The
+    // same physical controller often shows up twice (e.g. Steam Input's
+    // virtual pad alongside the real one); handled per pad, the idle copy
+    // would reset "held" every frame and the other would re-trigger a fresh
+    // press each frame, skipping several elements (or going back several
+    // pages) on one press.
+    const pressed: Record<Direction, boolean> = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+    };
+    let isConfirm = false;
+    let isCancel = false;
+
     for (const pad of pads) {
       if (!pad) continue;
 
+      // A stick direction engages past AXIS_THRESHOLD but only releases
+      // below AXIS_RELEASE, so a stick hovering near the threshold doesn't
+      // flicker into repeated presses.
       const stickX = pad.axes[0] ?? 0;
       const stickY = pad.axes[1] ?? 0;
+      const stick = (value: number, direction: Direction) =>
+        value > (held[direction] ? AXIS_RELEASE : AXIS_THRESHOLD);
 
-      handleDirection(
-        "up",
-        (pad.buttons[DPAD_UP]?.pressed ?? false) || stickY < -AXIS_THRESHOLD,
-        now,
-      );
-      handleDirection(
-        "down",
-        (pad.buttons[DPAD_DOWN]?.pressed ?? false) || stickY > AXIS_THRESHOLD,
-        now,
-      );
-      handleDirection(
-        "left",
-        (pad.buttons[DPAD_LEFT]?.pressed ?? false) || stickX < -AXIS_THRESHOLD,
-        now,
-      );
-      handleDirection(
-        "right",
-        (pad.buttons[DPAD_RIGHT]?.pressed ?? false) || stickX > AXIS_THRESHOLD,
-        now,
-      );
+      pressed.up ||= (pad.buttons[DPAD_UP]?.pressed ?? false) || stick(-stickY, "up");
+      pressed.down ||= (pad.buttons[DPAD_DOWN]?.pressed ?? false) || stick(stickY, "down");
+      pressed.left ||= (pad.buttons[DPAD_LEFT]?.pressed ?? false) || stick(-stickX, "left");
+      pressed.right ||= (pad.buttons[DPAD_RIGHT]?.pressed ?? false) || stick(stickX, "right");
 
-      const isConfirm = pad.buttons[BUTTON_CONFIRM]?.pressed ?? false;
-      const isCancel = pad.buttons[BUTTON_CANCEL]?.pressed ?? false;
-      if (isConfirm && !wasConfirm) confirm();
-      if (isCancel && !wasCancel) cancel();
-      wasConfirm = isConfirm;
-      wasCancel = isCancel;
+      isConfirm ||= pad.buttons[BUTTON_CONFIRM]?.pressed ?? false;
+      isCancel ||= pad.buttons[BUTTON_CANCEL]?.pressed ?? false;
     }
+
+    for (const direction of ["up", "down", "left", "right"] as const) {
+      handleDirection(direction, pressed[direction], now);
+    }
+
+    if (isConfirm && !wasConfirm) confirm();
+    if (isCancel && !wasCancel) cancel();
+    wasConfirm = isConfirm;
+    wasCancel = isCancel;
 
     frame = requestAnimationFrame(poll);
   }

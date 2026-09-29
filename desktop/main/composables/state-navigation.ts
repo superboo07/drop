@@ -126,7 +126,10 @@ export async function initialNavigation(state: ReturnType<typeof useAppState>) {
 
   console.log(`initialNavigation navigating to ${JSON.stringify(target)}`);
   try {
-    await router.push(target);
+    // Replace, not push: "/" (pages/index.vue) is a blank bootstrap page,
+    // and leaving it in history lets back navigation land on a white screen
+    // with nothing to navigate from.
+    await router.replace(target);
     console.log(`initialNavigation reached ${JSON.stringify(target)}`);
   } catch (e) {
     console.error(

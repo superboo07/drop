@@ -1,5 +1,11 @@
 # syntax=docker/dockerfile:1
 
+# Layers here are ordered so an edit only rebuilds what depends on it: every
+# stage copies just the files it needs, as late as it can. The `--mount=type=cache`
+# directories (pnpm store, cargo registry, torrential's target dir) persist
+# between builds on the builder, outside the image, so a source change
+# recompiles only the code that changed rather than every dependency.
+
 # Pinned to bookworm so the glibc here matches the torrential build stage
 # and the libarchive runtime package is named `libarchive13` (trixie renames it to libarchive13t64).
 FROM node:lts-bookworm-slim AS base
@@ -8,8 +14,10 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 WORKDIR /app
 
-## so corepack knows pnpm's version
-COPY . .
+## so corepack knows pnpm's version. Only package.json: anything more and
+## every source edit would invalidate this stage and all the ones built on it,
+## runtime image included.
+COPY package.json ./
 ## prevent prompt to download
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 ## setup for offline
@@ -18,8 +26,14 @@ RUN corepack pack
 ENV COREPACK_ENABLE_NETWORK=0
 
 ### INSTALL DEPS ONCE
+## Just the lockfile and workspace manifests, so this only reruns when
+## dependencies change.
 FROM base AS deps
-RUN pnpm install --frozen-lockfile --ignore-scripts
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY server/package.json ./server/
+COPY libraries/base/package.json ./libraries/base/
+RUN --mount=type=cache,id=drop-pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
 
 ### BUILD TORRENTIAL
 # Bookworm-pinned to match the runtime image's glibc (a trixie build would not run on bookworm).
@@ -32,11 +46,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-COPY . .
-RUN cargo build --release --manifest-path ./torrential/Cargo.toml
+## torrential and the path crates it depends on (droplet, droplet_types, libarchive)
+COPY libraries ./libraries
+COPY torrential ./torrential
+## The registry and target dir are cache mounts: without them every build
+## starts with an empty registry, and freshly unpacked crate sources get new
+## mtimes, so cargo sees every dependency as changed and rebuilds the whole
+## tree. A cache mount isn't part of the image, so the binary is copied out in
+## the same step.
+RUN --mount=type=cache,id=drop-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=drop-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=drop-torrential-target,target=/build/torrential/target \
+    cargo build --release --manifest-path ./torrential/Cargo.toml \
+    && cp ./torrential/target/release/torrential /usr/local/bin/torrential
 
 ### BUILD APP
-FROM base AS build-system
+FROM deps AS build-system
 
 ENV NODE_ENV=production
 ENV NUXT_TELEMETRY_DISABLED=1
@@ -45,10 +70,9 @@ ENV NUXT_TELEMETRY_DISABLED=1
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-## copy deps and rest of project files
+## rest of project files, over the installed deps (.dockerignore keeps the
+## host's node_modules out)
 COPY . .
-COPY --from=deps /app/node_modules ./node_modules
-
 
 ARG BUILD_DROP_VERSION
 ARG BUILD_GIT_REF
@@ -62,14 +86,6 @@ FROM base AS run-system
 
 ENV NODE_ENV=production
 ENV NUXT_TELEMETRY_DISABLED=1
-
-# The base stage's `COPY . .` puts the whole repo into the runtime WORKDIR (/app),
-# but at runtime only the artifacts copied explicitly below are needed. Drop the
-# inherited `torrential` source dir: the service resolves the binary by scanning
-# the cwd for `torrential`, and a directory there is spawned as ./torrential and
-# fails with EACCES. With it gone, resolution falls through to the `torrential`
-# binary installed on PATH (/usr/bin/torrential) below.
-RUN rm -rf /app/torrential
 
 # RUN --mount=type=cache,target=/root/.yarn YARN_CACHE_FOLDER=/root/.yarn yarn add --network-timeout 1000000 --no-lockfile --ignore-scripts prisma@6.11.1
 ## runtime deps:
@@ -94,7 +110,9 @@ COPY --from=build-system /app/server/.output ./app
 COPY --from=build-system /app/server/prisma ./prisma
 COPY --from=build-system /app/server/build ./startup
 COPY --from=build-system /app/server/build/nginx.conf /nginx.conf
-COPY --from=torrential-build /build/torrential/target/release/torrential /usr/bin/
+# The torrential service resolves its binary by scanning the cwd (/app) for
+# `torrential` before falling back to PATH, so it must not be put there.
+COPY --from=torrential-build /usr/local/bin/torrential /usr/bin/
 
 ENV LIBRARY="/library"
 ENV DATA="/data"

@@ -1,6 +1,24 @@
 /sites
 /cli
 /desktop
-/backend # go backend
+# go backend (.dockerignore has no inline comments)
+/backend
 
-node_modules
+# Build output and installed deps. The Dockerfile builds its own; sending the
+# host's along only makes the context gigabytes larger (cargo targets alone
+# are several GB) and risks stale copies landing in the image.
+**/node_modules
+**/target
+/target-container
+**/.output
+**/.nuxt
+**/.nitro
+**/.cache
+*.AppImage
+/drop-custom.tar.gz
+
+# Local-only state: the dev library link and env files with secrets
+**/.data
+**/.env
+**/.env.*
+!**/.env.example

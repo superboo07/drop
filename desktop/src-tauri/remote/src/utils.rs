@@ -183,6 +183,22 @@ pub fn get_client_async() -> ClientWithMiddleware {
         .with(AutoOfflineMiddleware)
         .build()
 }
+/// For large downloads (client self-updates): no overall timeout, since a
+/// 150MB file can legitimately take minutes, but a stalled read still fails.
+pub fn get_client_download() -> reqwest::Client {
+    let mut client = reqwest::ClientBuilder::new();
+
+    for cert in DROP_CERT_BUNDLE.iter() {
+        client = client.add_root_certificate(cert.clone());
+    }
+    client
+        .use_rustls_tls()
+        .user_agent("Drop Desktop Client")
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(30))
+        .build()
+        .expect("Failed to build download client")
+}
 pub fn get_client_ws() -> reqwest::Client {
     let mut client = reqwest::ClientBuilder::new();
 

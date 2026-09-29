@@ -119,4 +119,9 @@ export const systemACLDescriptions: ObjectFromList<typeof systemACLs> = {
 
   "system-data:listen":
     "Connect to a websocket to receive system data updates.",
+
+  "updater:read": "List desktop client releases and download their files.",
+  "updater:new": "Upload a new desktop client release.",
+  "updater:update": "Edit, publish and withdraw desktop client releases.",
+  "updater:delete": "Delete a desktop client release.",
 };

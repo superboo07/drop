@@ -136,7 +136,52 @@ export type Settings = {
   lunaPort: number;
   byoEmulator: boolean;
   emulatorOverrides: { [emulatorGameId: string]: EmulatorOverride };
+  updateBranch: UpdateBranch;
+  checkUpdatesOnStart: boolean;
 };
+
+export type UpdateBranch = "release" | "test";
+
+export type ClientReleaseNotes = {
+  id: string;
+  tag: string;
+  publishedAt: string;
+  notes: string;
+};
+
+export type OfferedClientUpdate = {
+  id: string;
+  tag: string;
+  branchSlug: UpdateBranch;
+  size: number;
+  sha256: string;
+  publishedAt: string;
+  rollback: boolean;
+  required: boolean;
+  notes: ClientReleaseNotes[];
+};
+
+export type ClientUpdateStatus = {
+  appVersion: string;
+  arch: string;
+  unsupportedReason: string | null;
+  appimagePath?: string | null;
+  branch?: UpdateBranch;
+  current?: { id: string; tag: string; branchSlug: UpdateBranch } | null;
+  update?: OfferedClientUpdate | null;
+  checking: boolean;
+  lastChecked?: string | null;
+  error?: string | null;
+  installed?: string | null;
+};
+
+export type ClientUpdateProgress =
+  | { phase: "Downloading"; downloaded: number; total: number }
+  | { phase: "Verifying" }
+  | { phase: "Replacing" }
+  | { phase: "Done" }
+  | { phase: "Cancelled" }
+  | { phase: "Failed"; message: string };
 
 export type LocalEmulator = {
   kind: "executable" | "flatpak";

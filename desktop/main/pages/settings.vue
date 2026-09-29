@@ -49,6 +49,7 @@ import {
   BugAntIcon,
   LanguageIcon,
   CpuChipIcon,
+  ArrowPathIcon,
 } from "@heroicons/vue/16/solid";
 import type { Component } from "vue";
 import type { NavigationItem } from "~/types";
@@ -142,6 +143,12 @@ const navigation = computed(() => [
     route: "/settings/emulators",
     prefix: "/settings/emulators",
     icon: CpuChipIcon,
+  },
+  {
+    label: "Updates",
+    route: "/settings/updates",
+    prefix: "/settings/updates",
+    icon: ArrowPathIcon,
   },
   {
     label: "Account",

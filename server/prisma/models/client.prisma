@@ -21,3 +21,50 @@ model Client {
   tokens            APIToken[]
   playtimeSessions  PlaytimeSession[]
 }
+
+// What kind of desktop client build a release is. Each target has its own
+// installer strategy on the client; add new ones (e.g. a Windows installer)
+// here and in server/internal/clientreleases.
+enum ClientReleaseTarget {
+  LinuxAppImage @map("linux-appimage")
+}
+
+// Clients on the release branch are only offered release builds; clients on
+// the test branch are offered the newest build from either branch.
+enum ClientReleaseBranch {
+  Release @map("release")
+  Test    @map("test")
+}
+
+enum ClientReleaseArch {
+  x86_64
+  aarch64
+}
+
+// A desktop client build uploaded through Admin > Settings > Updater. The id
+// is the release's identity; `tag` is only what people see, and may repeat
+// (e.g. a withdrawn or deleted build re-uploaded under the same tag).
+model ClientRelease {
+  id     String              @id @default(uuid())
+  tag    String
+  target ClientReleaseTarget
+  arch   ClientReleaseArch
+  branch ClientReleaseBranch @default(Release)
+
+  notes    String  @default("") @db.Text // Markdown
+  required Boolean @default(false) // client can't dismiss the update prompt
+
+  fileName String
+  size     BigInt
+  sha256   String
+
+  uploadedAt  DateTime  @default(now())
+  publishedAt DateTime? // null while a draft
+  withdrawnAt DateTime?
+
+  uploaderId String?
+  uploader   User?   @relation(fields: [uploaderId], references: [id], onDelete: SetNull)
+
+  @@index([target, arch])
+  @@index([sha256])
+}

@@ -24,6 +24,18 @@
 
         <div>
           <div class="flex items-center gap-x-3">
+            <TagIcon class="h-5 w-5 text-zinc-400" />
+            <h3 class="text-sm font-medium leading-6 text-zinc-100">
+              Version
+            </h3>
+          </div>
+          <p class="mt-2 text-sm text-zinc-400 font-mono ml-8">
+            {{ appVersion }}
+          </p>
+        </div>
+
+        <div>
+          <div class="flex items-center gap-x-3">
             <ComputerDesktopIcon class="h-5 w-5 text-zinc-400" />
             <h3 class="text-sm font-medium leading-6 text-zinc-100">
               Platform
@@ -95,6 +107,12 @@ import {
 import { open } from "@tauri-apps/plugin-shell";
 
 const clientId = ref<string | null>(null);
+// "<version>-g<commit>[.dirty]" for AppImage builds - the same string the
+// AppImage's file name carries
+const appVersion = ref<string>("");
+invokeWithTimeout<{ appVersion: string }>("fetch_client_update_status").then(
+  (status) => (appVersion.value = status.appVersion),
+);
 const platformInfo = ref("Loading...");
 const baseUrl = ref<string | null>(null);
 const dataDir = ref<string | null>(null);

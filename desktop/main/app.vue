@@ -13,12 +13,14 @@
     <NuxtLayout class="select-none w-screen h-screen">
       <NuxtPage />
       <ModalStack />
+      <ClientUpdateModal />
     </NuxtLayout>
   </template>
 </template>
 
 <script setup lang="ts">
 import "~/composables/downloads.js";
+import { setupClientUpdateChecks } from "~/composables/client-update.js";
 
 import { useAppState } from "./composables/app-state.js";
 import {
@@ -34,6 +36,8 @@ const route = useRoute();
 useSpatialGamepadNavigation();
 
 const state = useAppState();
+// The launch picker is its own small window; only the main one checks
+if (route.path !== "/launch-picker") setupClientUpdateChecks();
 const startupError = ref<string | undefined>();
 
 async function fetchState() {

@@ -58,6 +58,11 @@ use url::Url;
 use utils::app_emit;
 
 mod client;
+#[cfg(target_os = "linux")]
+mod client_update;
+#[cfg(not(target_os = "linux"))]
+#[path = "client_update_stub.rs"]
+mod client_update;
 mod collections;
 mod download_manager;
 mod downloads;
@@ -296,7 +301,13 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             ::process::compat::set_default,
             luna::fetch_luna_status,
-            luna::extract_luna_bridge
+            luna::extract_luna_bridge,
+            // Client self-update
+            client_update::fetch_client_update_status,
+            client_update::check_client_update,
+            client_update::install_client_update,
+            client_update::cancel_client_update,
+            client_update::restart_after_client_update
         ])
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())

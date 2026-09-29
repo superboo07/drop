@@ -25,6 +25,8 @@ model User {
     playtimeSessions PlaytimeSession[]
 
     groups UserGroup[]
+
+    clientReleases ClientRelease[]
 }
 
 model Notification {

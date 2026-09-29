@@ -9,6 +9,7 @@ pub mod data {
     pub type Database = v1::Database;
     pub type GameVersion = v1::GameVersion;
     pub type Settings = v1::Settings;
+    pub type UpdateBranch = v1::UpdateBranch;
     pub type EmulatorOverride = v1::EmulatorOverride;
     pub type EmulatorOverrideKind = v1::EmulatorOverrideKind;
     pub type LocalEmulator = v1::LocalEmulator;
@@ -237,6 +238,32 @@ pub mod data {
             // launch option's `emulator.game_id` points at.
             #[serde(default)]
             pub emulator_overrides: HashMap<String, EmulatorOverride>, // ... other settings ...
+            // Which of the server's client builds this computer is offered:
+            // "release" only gets release builds, "test" gets the newest
+            // build from either branch.
+            #[serde(default)]
+            pub update_branch: UpdateBranch,
+            // Whether Drop tells you about an update found at startup.
+            // Required updates are shown either way.
+            #[serde(default = "default_true")]
+            pub check_updates_on_start: bool,
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+        #[serde(rename_all = "lowercase")]
+        pub enum UpdateBranch {
+            #[default]
+            Release,
+            Test,
+        }
+
+        impl UpdateBranch {
+            pub fn as_str(&self) -> &'static str {
+                match self {
+                    UpdateBranch::Release => "release",
+                    UpdateBranch::Test => "test",
+                }
+            }
         }
 
         #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -304,6 +331,9 @@ pub mod data {
         fn default_ui_scale() -> f64 {
             1.0
         }
+        fn default_true() -> bool {
+            true
+        }
         impl Default for Settings {
             fn default() -> Self {
                 Self {
@@ -319,6 +349,8 @@ pub mod data {
                     luna_port: default_luna_port(),
                     byo_emulator: false,
                     emulator_overrides: HashMap::new(),
+                    update_branch: UpdateBranch::default(),
+                    check_updates_on_start: true,
                 }
             }
         }

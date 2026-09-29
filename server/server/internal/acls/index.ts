@@ -108,6 +108,11 @@ export const systemACLs = [
   "settings:update",
 
   "system-data:listen",
+
+  "updater:read",
+  "updater:new",
+  "updater:update",
+  "updater:delete",
 ] as const;
 const systemACLPrefix = "system:";
 

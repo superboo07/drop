@@ -84,6 +84,11 @@ services:
       # Shell history across rebuilds.
       - drop-bashhistory:/commandhistory
 
+      # Podman's images and layers. A volume, because overlay cannot stack on
+      # this container's own overlay root; on a volume it is native overlay (no
+      # fuse) and survives rebuilds.
+      - drop-containers:/var/lib/containers
+
       # **No credential is bound in from the host.** No ~/.ssh, no ~/.gitconfig,
       # no Claude login: each of those is a volume the container owns and you
       # fill in once, from inside. A key generated or pasted in here stays here
@@ -111,6 +116,17 @@ services:
     device_cgroup_rules:
       - "c 13:* rmw"
 
+    # **Podman, so container builds work in here** (Dockerfile). The host
+    # daemon is rootless: these apply inside the user namespace it gives us,
+    # never to the host. SYS_ADMIN is for podman's mounts and namespaces;
+    # seccomp=unconfined because the default profile still denies crun's
+    # pivot_root and keyctl. No docker socket, no --privileged.
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+      - label=disable
+
   # The same Postgres as server/dev-tools/compose.yml. Not published on a host
   # port: only the dev service talks to it, and that way it cannot collide with
   # a host-side instance of that compose file on 5432.
@@ -129,6 +145,7 @@ services:
       retries: 20
 
 volumes:
+  drop-containers:
   drop-nm-root:
   drop-nm-server:
   drop-nm-base:

@@ -46,13 +46,13 @@ elif [ ! -e "$library_link" ]; then
 MSG
 fi
 
-# The nested session's tools. They are built by desktop/vendor/build.sh, which
-# needs Docker -- i.e. it runs on the host, not in here.
+# The nested session's tools. desktop/vendor/build.sh builds them in a
+# container, which works in here through podman (the Dockerfile's podman layer).
 if [ ! -x desktop/vendor/out/nested-session/bin/openbox ]; then
     cat <<'MSG'
 
   The nested session's openbox/picom/tint2 are not built, so its tests
-  will skip themselves. On the host (it builds in Docker):
+  will skip themselves. Build them (in a container, via podman, in here):
       git submodule update --init desktop/vendor
       bash desktop/vendor/build.sh
 

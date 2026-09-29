@@ -172,6 +172,29 @@ RUN set -eu; \
 	go version | grep -Eq 'go1\.(2[6-9]|[3-9][0-9])' || fail "Go >=1.26.1 (backend/go.mod)"; \
 	command -v nginx >/dev/null || fail "nginx (server services, root Dockerfile)"
 
+# **Container builds work in here, with podman** -- the project's own Dockerfiles
+# and scripts that call `docker build`/`docker run` (podman-docker is the
+# `docker` command). There is no docker socket: handing one in would give the
+# container the host's daemon. Podman runs as this container's root, which the
+# rootless host daemon maps to you, so nested builds get no more than you have.
+# docker-compose.yml supplies what it needs (SYS_ADMIN inside our user
+# namespace, seccomp unconfined for pivot_root/keyctl, a storage volume); the
+# config below covers what a container cannot do:
+#  - netns=host: netavark cannot create bridges (netlink EPERM); builds and
+#    runs share this container's network instead.
+#  - cgroups=disabled: /sys/fs/cgroup is read-only in here.
+#  - keyring=false: session keyrings are denied.
+#  - short names resolve on Docker Hub, as `FROM debian:trixie` does in Docker.
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+	&& apt-get install -y --no-install-recommends \
+		podman podman-docker crun uidmap \
+	&& apt-get clean && rm -rf /var/lib/apt/lists/* \
+	&& printf '%s\n' '[containers]' 'netns = "host"' 'cgroups = "disabled"' 'keyring = false' \
+		'[engine]' 'cgroup_manager = "cgroupfs"' > /etc/containers/containers.conf \
+	&& printf '%s\n' 'unqualified-search-registries = ["docker.io"]' 'short-name-mode = "permissive"' \
+		> /etc/containers/registries.conf.d/50-docker-hub.conf \
+	&& touch /etc/containers/nodocker
+
 # XDG_RUNTIME_DIR for root; docker-compose.yml binds the host's Wayland socket
 # into it. The nested session also writes its per-session config under it.
 # Created here so it has the 0700 the spec requires.

@@ -35,26 +35,9 @@ cd "$SCRIPT_DIR"
 
 BUILDER_IMAGE="drop-app-builder"
 
-# ── Fast mode (DROP_FAST=1) ───────────────────────────────────────────────────
-# Release builds here use `lto = true` + `codegen-units = 1` (src-tauri's
-# [profile.release]), which is most of a clean build's wall time and buys
-# nothing when you just want to click around in the app. DROP_FAST=1 overrides
-# those through cargo's env-var profile overrides, so the checked-in profile -
-# and therefore what CI and releases produce - is untouched.
-#
-# The overrides change every crate's fingerprint, so a fast build and a real
-# build would otherwise invalidate each other's artifacts on every switch.
-# Fast mode gets its own target directory (a named volume) to keep the two
-# incremental caches side by side.
-
 # ── Docker wrapper ─────────────────────────────────────────────────────────────
 # When invoked on the host, build the image then re-run this script inside it.
 if [ -z "${DROP_IN_DOCKER:-}" ]; then
-    if [ -n "${DROP_FAST:-}" ]; then
-        echo ">>> DROP_FAST set: thin LTO, parallel codegen, separate target dir."
-        echo ">>> Dev builds only - use a normal build for anything you ship."
-    fi
-
     # The nested session's openbox/picom/tint2 are built by their own script
     # (and their own, much smaller, builder image) first, so they can be
     # iterated on without a full AppImage build. The container below only
@@ -81,7 +64,6 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     echo ">>> Running build inside Docker..."
     docker run --rm \
         -e DROP_IN_DOCKER=1 \
-        -e DROP_FAST \
         -e npm_config_store_dir=/pnpm-store \
         -v "$REPO_ROOT":/workspace \
         -v drop-appimage-pnpm-store:/pnpm-store \
@@ -89,7 +71,6 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
         -v drop-appimage-main-node-modules:"/workspace/$APP_DIR/main/node_modules" \
         -v drop-appimage-cargo-registry:/root/.cargo/registry \
         -v drop-appimage-cargo-git:/root/.cargo/git \
-        -v drop-appimage-target-fast:/cargo-target-fast \
         -w /workspace \
         "$BUILDER_IMAGE" \
         bash "$APP_DIR/build_appimage.sh"
@@ -105,17 +86,6 @@ fi
 # install` inside main/ (triggered by `pnpm tauri build`'s beforeBuildCommand
 # below) needs it too, not just the install on the next line.
 export CI=true
-
-# See the DROP_FAST notes above. These are cargo's documented env overrides for
-# [profile.release] keys, so nothing in Cargo.toml changes - `panic = "abort"`
-# and the rest of the profile still apply, and an unset DROP_FAST builds
-# exactly what it always did.
-if [ -n "${DROP_FAST:-}" ]; then
-    export CARGO_PROFILE_RELEASE_LTO=thin
-    export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
-    export CARGO_PROFILE_RELEASE_INCREMENTAL=true
-    export CARGO_TARGET_DIR=/cargo-target-fast
-fi
 
 # ── 1. Work out the version to stamp into this build ──────────────────────────
 # The base comes from tauri.conf.json (the release number the branch is
@@ -168,9 +138,7 @@ pnpm tauri build --bundles appimage --config "{\"version\": \"$APP_VERSION\"}"
 # that strips the AppImage's usr/bin from PATH before spawning external
 # tools (see utils::external_open::sanitize_external_command) -- that step
 # re-adds this specific directory back.
-# Honour CARGO_TARGET_DIR (fast mode points it at a volume); tauri-bundler
-# writes its bundles under whichever target directory cargo used.
-TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/src-tauri/target}"
+TARGET_DIR="$PWD/src-tauri/target"
 BUNDLE_DIR="$TARGET_DIR/release/bundle/appimage"
 
 # tauri-bundler names its output "{productName}_{version}_{arch}.AppImage", so
@@ -233,9 +201,7 @@ rm -f "$APPIMAGE"
 ARCH=x86_64 appimagetool "$APPDIR" "$APPIMAGE"
 
 # ── 5. Copy the result out to the repo root ───────────────────────────────────
-# Fast builds are tagged so they can't be confused with a shippable artifact
-# built from the same commit.
-OUTPUT_NAME="Drop Desktop Client_${APP_VERSION}${DROP_FAST:+-fast}_amd64.AppImage"
+OUTPUT_NAME="Drop Desktop Client_${APP_VERSION}_amd64.AppImage"
 # The repo root, not desktop/, so built AppImages all collect in one place.
 cp "$APPIMAGE" "$REPO_ROOT/$OUTPUT_NAME"
 

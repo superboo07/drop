@@ -45,12 +45,42 @@ pub mod v1 {
     // locally right after a completed download as a fallback for when no
     // server hash exists (offline at uninstall time is a non-issue either
     // way, since both are cached locally at install/update time already).
+    //
+    // The rest is what lets an update tell the player's own edits apart from
+    // what Drop put there (see `file_plan`):
+    // - `owner`: the server version that supplied this content, for spotting
+    //   changes when the server has no hash for a file.
+    // - `size`/`modified_ns`: the file's metadata right after Drop wrote and
+    //   verified it. While both still match, the file is known to be
+    //   untouched without re-hashing it.
+    // - `pending_hash`: Drop has started replacing this file with content of
+    //   this hash, so whatever is on disk now is Drop's half-written file, not
+    //   an edit by the player.
+    // - `declined_hash`: the player chose to keep their own copy instead of
+    //   this content; they aren't asked about the same content again.
     #[derive(Serialize, Deserialize, Clone, Debug, Default)]
     pub struct InstalledFileRecord {
         #[serde(default)]
         pub server_hash: Option<String>,
         #[serde(default)]
         pub client_hash: Option<String>,
+        #[serde(default)]
+        pub owner: Option<String>,
+        #[serde(default)]
+        pub size: Option<u64>,
+        #[serde(default)]
+        pub modified_ns: Option<u64>,
+        #[serde(default)]
+        pub pending_hash: Option<String>,
+        #[serde(default)]
+        pub declined_hash: Option<String>,
+    }
+
+    impl InstalledFileRecord {
+        /// Hash of the content Drop last installed at this path, if known.
+        pub fn baseline(&self) -> Option<&str> {
+            self.server_hash.as_deref().or(self.client_hash.as_deref())
+        }
     }
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -108,7 +138,8 @@ impl DropData {
         match DropData::read(&base_path) {
             Ok(v) => {
                 if v.game_id != game_id || v.game_version != game_version {
-                    return DropData::new(
+                    let previous_files = v.get_installed_files();
+                    let new = DropData::new(
                         game_id,
                         game_version,
                         target_platform,
@@ -116,6 +147,12 @@ impl DropData {
                         configuration,
                         Some(v.game_version),
                     );
+                    // What the previous version installed is the baseline the
+                    // update compares against to find the player's own edits.
+                    if v.game_id == new.game_id {
+                        new.set_installed_files(previous_files);
+                    }
+                    return new;
                 }
                 v
             }

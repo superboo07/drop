@@ -64,6 +64,8 @@ impl Serialize for DownloadManagerStatus {
 pub enum DownloadStatus {
     Queued,
     Downloading,
+    // Paused on the player: the update would change files they edited.
+    WaitingForInput,
     Validating,
     Error,
 }

@@ -14,6 +14,7 @@
       <NuxtPage />
       <ModalStack />
       <ClientUpdateModal />
+      <FileConflictModal v-if="route.path !== '/launch-picker'" />
     </NuxtLayout>
   </template>
 </template>

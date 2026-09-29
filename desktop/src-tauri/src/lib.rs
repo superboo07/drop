@@ -277,6 +277,8 @@ pub fn run() {
             pause_downloads,
             resume_downloads,
             cancel_game,
+            fetch_file_conflicts,
+            resolve_file_conflicts,
             uninstall_game,
             // Processes
             launch_game,

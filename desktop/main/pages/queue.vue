@@ -51,7 +51,11 @@
           <div class="flex shrink-0 items-center gap-x-4">
             <div class="hidden sm:flex sm:flex-col sm:items-end">
               <p class="text-md text-zinc-500 uppercase font-display font-bold">
-                {{ element.status }}
+                {{
+                  element.status === "WaitingForInput"
+                    ? "Waiting for you"
+                    : element.status
+                }}
               </p>
               <div
                 v-if="element.dl_progress"

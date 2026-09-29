@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{Permissions, set_permissions};
 use std::io::{self, SeekFrom};
 #[cfg(unix)]
@@ -47,6 +47,10 @@ pub async fn download_game_chunk(
     key: &[u8; 16],
     chunk_data: &ChunkData,
     file_list: &HashMap<String, String>,
+    // Only these files are written; the rest of the chunk is read past.
+    // Keeps a chunk shared with a file the player chose to keep from
+    // overwriting it.
+    write_set: &HashSet<String>,
     base_path: &Path,
     control_flag: &DownloadThreadControl,
     // How much we're downloading
@@ -125,10 +129,11 @@ pub async fn download_game_chunk(
     let mut cipher = Aes128Ctr64LE::new(key.into(), &chunk_data.iv.into());
     let mut read_buf = vec![0u8; READ_BUF_LEN];
     for file in &chunk_data.files {
-        let should_write = file_list
-            .get(&file.filename)
-            .map(|v| v == version_id)
-            .unwrap_or(false);
+        let should_write = write_set.contains(&file.filename)
+            && file_list
+                .get(&file.filename)
+                .map(|v| v == version_id)
+                .unwrap_or(false);
         let path = base_path.join(file.filename.clone());
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -183,7 +188,7 @@ pub async fn download_game_chunk(
         }
 
         #[cfg(unix)]
-        {
+        if should_write {
             drop(file_handle);
             let permissions = if file.permissions == 0 {
                 0o744

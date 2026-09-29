@@ -27,7 +27,7 @@ use std::fs::{create_dir_all, remove_file};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tokio::sync::mpsc::Sender;
 use utils::{app_emit, lock, send};
@@ -38,6 +38,10 @@ use crate::state::GameStatusManager;
 
 use super::download_logic::download_game_chunk;
 use super::drop_data::{DropData, InstalledFileRecord, hash_file};
+use super::file_plan::{
+    ConflictChoice, FileConflict, FilePlan, InstallDisk, PendingConflicts, clear_pending,
+    compute_plan, file_metadata, register_pending, take_answer,
+};
 
 static RETRY_COUNT: usize = 3;
 
@@ -52,7 +56,6 @@ pub struct DownloadInformation {
     file_hashes: HashMap<String, String>,
     manifests: HashMap<String, Manifest>,
     install_size: u64,
-    download_size: u64,
 }
 
 pub struct GameDownloadAgent {
@@ -136,7 +139,15 @@ impl GameDownloadAgent {
         result.ensure_manifest_exists().await?;
         result.resync_hashes_with_server();
 
-        let required_space = lock!(result.dl_info).as_ref().unwrap().install_size;
+        let required_space = {
+            let dl_info = lock!(result.dl_info);
+            let dl_info = dl_info.as_ref().unwrap();
+            if result.is_untracked_update() {
+                dl_info.install_size
+            } else {
+                estimate_write_bytes(dl_info, &result.dropdata.get_installed_files())
+            }
+        };
 
         let available_space = get_disk_available(data_base_dir_path)? as u64;
 
@@ -148,21 +159,6 @@ impl GameDownloadAgent {
         }
 
         Ok(result)
-    }
-
-    fn scan_filetree(&self, path: &Path) -> Result<Vec<PathBuf>, io::Error> {
-        if !path.is_dir() {
-            return Ok(vec![path.into()]);
-        };
-
-        let subdirs = path.read_dir()?;
-        let mut results = Vec::new();
-        for subdir in subdirs {
-            let subdir = subdir?;
-            let subfiles = self.scan_filetree(&subdir.path())?;
-            results.extend(subfiles);
-        }
-        Ok(results)
     }
 
     // Blocking
@@ -194,7 +190,7 @@ impl GameDownloadAgent {
 
         info!("beginning download for {}...", self.metadata().id);
 
-        let mut res = self.run().await;
+        let mut res = self.run(app_handle).await;
 
         // A depot 404'd a chunk our manifest listed. Before giving up (and
         // leaving the user unable to ever install this game again without
@@ -205,7 +201,7 @@ impl GameDownloadAgent {
             && self.resync_manifest_from_scratch().await
         {
             self.setup_download(app_handle)?;
-            res = self.run().await;
+            res = self.run(app_handle).await;
         }
 
         debug!(
@@ -275,7 +271,12 @@ impl GameDownloadAgent {
     /// given references content the depots don't have.
     async fn download_manifest(&self, full_resync: bool) -> Result<(), ApplicationDownloadError> {
         let client = DROP_CLIENT_ASYNC.clone();
-        let previous = if full_resync {
+        // With a record of what Drop installed, the client works out which
+        // files changed itself (see `file_plan`), so it wants every chunk.
+        // Letting the server leave out files it thinks are unchanged misses
+        // any file whose content was resynced in place on the server. Only
+        // installs from before files were tracked still rely on that.
+        let previous = if full_resync || !self.is_untracked_update() {
             ""
         } else {
             self.dropdata
@@ -357,32 +358,20 @@ impl GameDownloadAgent {
     }
 
     // Sets up progress for download writes
-    fn setup_progress(&self) {
-        let dl_info = lock!(self.dl_info);
-        let dl_info = dl_info.as_ref().unwrap();
-
-        let total_chunks = dl_info
-            .manifests
-            .iter()
-            .map(|v| v.1.chunks.len())
-            .sum::<usize>();
-
+    fn setup_progress(&self, total_chunks: usize, download_bytes: u64, disk_bytes: u64) {
         self.download_progress
-            .set_max(dl_info.download_size.try_into().unwrap());
+            .set_max(download_bytes.try_into().unwrap());
         self.download_progress.set_size(total_chunks);
         self.download_progress.reset();
 
-        self.disk_progress
-            .set_max(dl_info.install_size.try_into().unwrap());
+        self.disk_progress.set_max(disk_bytes.try_into().unwrap());
         self.disk_progress.set_size(total_chunks);
         self.disk_progress.reset();
     }
 
-    async fn run(&self) -> Result<bool, ApplicationDownloadError> {
+    async fn run(&self, app_handle: &AppHandle) -> Result<bool, ApplicationDownloadError> {
         self.depot_manager.sync_depots().await?;
         info!("synced depots");
-        self.setup_progress();
-        info!("setup progress objects");
         let manifests_chunks: Vec<(String, HashMap<String, ChunkData>, [u8; 16])> = {
             let dl_info = lock!(self.dl_info);
             dl_info
@@ -398,47 +387,77 @@ impl GameDownloadAgent {
             let dl_info = dl_info.as_ref().unwrap();
             (dl_info.file_list.clone(), dl_info.file_hashes.clone())
         };
-        // Record which files belong to this install/update as soon as we know
-        // them, so uninstall can later remove exactly these files (verifying
-        // their content against server_hash below) instead of wiping the
-        // whole install directory.
-        self.dropdata.set_installed_files(
-            file_list
-                .keys()
-                .map(|path| {
-                    (
-                        path.clone(),
-                        InstalledFileRecord {
-                            server_hash: file_hashes.get(path).cloned(),
-                            client_hash: None,
+
+        // Work out what to write and delete, asking the player first about
+        // anything they changed themselves.
+        let Some(plan) = self
+            .plan_files(app_handle, &manifests_chunks, &file_list, &file_hashes)
+            .await?
+        else {
+            return Ok(false);
+        };
+        info!(
+            "{}: writing {} file(s), deleting {}, leaving {} as they are",
+            self.metadata.id,
+            plan.write.len(),
+            plan.delete.len(),
+            plan.unchanged.len() + plan.declined.len()
+        );
+        self.start_plan(&plan)?;
+
+        // Only fetch chunks that carry at least one file being written.
+        let write_set: HashSet<String> = plan.write.keys().cloned().collect();
+        let manifests_chunks: Vec<(String, HashMap<String, ChunkData>, [u8; 16])> =
+            manifests_chunks
+                .into_iter()
+                .map(|(version_id, chunks, key)| {
+                    let chunks = chunks
+                        .into_iter()
+                        .filter(|(_, chunk)| {
+                            chunk.files.iter().any(|f| {
+                                write_set.contains(&f.filename)
+                                    && file_list.get(&f.filename) == Some(&version_id)
+                            })
+                        })
+                        .collect::<HashMap<_, _>>();
+                    (version_id, chunks, key)
+                })
+                .collect();
+        let chunk_len = manifests_chunks.iter().map(|v| v.1.len()).sum::<usize>();
+        let needed_chunk_ids: Vec<String> = manifests_chunks
+            .iter()
+            .flat_map(|(_, chunks, _)| chunks.keys().cloned())
+            .collect();
+        let (download_bytes, disk_bytes) =
+            manifests_chunks
+                .iter()
+                .fold((0u64, 0u64), |totals, (version_id, chunks, _)| {
+                    chunks.values().flat_map(|c| c.files.iter()).fold(
+                        totals,
+                        |(download, disk), f| {
+                            let length = f.length as u64;
+                            let written = write_set.contains(&f.filename)
+                                && file_list.get(&f.filename) == Some(version_id);
+                            (download + length, disk + if written { length } else { 0 })
                         },
                     )
-                })
-                .collect(),
-        );
+                });
+        self.setup_progress(chunk_len, download_bytes, disk_bytes);
+        info!("setup progress objects");
+
         let mut completed_chunks = {
             let completed_chunks = lock!(self.dropdata.contexts);
             completed_chunks.clone()
         };
         info!("started with {} existing chunks", completed_chunks.len());
-        let chunk_len = manifests_chunks.iter().map(|v| v.1.len()).sum::<usize>();
         let mut max_download_threads = borrow_db_checked().settings.max_download_threads;
         if max_download_threads == 0 {
             max_download_threads = 1;
         }
 
         let file_list = &file_list;
+        let write_set = &write_set;
         let base_path = &self.dropdata.base_path;
-        let current_file_tree = self.scan_filetree(base_path)?;
-
-        for file in current_file_tree {
-            let filename = file.strip_prefix(base_path)?.to_string_lossy().replace('\\', "/");
-            let needed = file_list.contains_key(&filename) || filename == ".dropdata";
-            if !needed {
-                debug!("deleted {}", file.display());
-                remove_file(file)?;
-            }
-        }
 
         let local_completed_chunks = completed_chunks.clone();
 
@@ -508,6 +527,7 @@ impl GameDownloadAgent {
                             &key,
                             &chunk_data,
                             file_list,
+                            write_set,
                             base_path,
                             &self.control_flag,
                             &download_progress_handle,
@@ -560,29 +580,216 @@ impl GameDownloadAgent {
 
         info!("completed {} chunks", drop_data_chunks.len());
 
-        // If there are any contexts left which are false
-        if completed_chunks.len() != chunk_len {
+        // Every chunk we needed has to be done; stale entries from an earlier
+        // attempt don't count.
+        let done = needed_chunk_ids
+            .iter()
+            .filter(|chunk_id| *completed_chunks.get(*chunk_id).unwrap_or(&false))
+            .count();
+        if done != chunk_len {
             info!(
                 "download agent for {} exited without completing ({}/{})",
                 self.metadata.id.clone(),
-                completed_chunks.len(),
+                done,
                 chunk_len,
             );
             return Ok(false);
         }
 
-        // Every chunk reported complete - verify the fully assembled files
-        // actually match what the server expects. Per-chunk checksums above
-        // only ever verify bytes in flight; they can't catch a bug in the
-        // offset/seek logic that assembles chunks into files, or corruption
-        // that happens after a chunk's bytes are already written to disk.
-        // This also records a client-computed hash as a fallback baseline for
-        // uninstall verification when no server hash is known for a file.
-        if !self.verify_installed_files(base_path).await? {
+        // Every chunk reported complete - verify the files we wrote actually
+        // match what the server expects. Per-chunk checksums above only ever
+        // verify bytes in flight; they can't catch a bug in the offset/seek
+        // logic that assembles chunks into files, or corruption that happens
+        // after a chunk's bytes are already written to disk. Files we didn't
+        // write are left out: a mismatch there is the player's own edit.
+        if !self.verify_written_files(base_path, &plan).await? {
             return Ok(false);
         }
 
+        self.finish_plan(&plan, file_list);
         Ok(true)
+    }
+
+    /// An update over an install made before Drop recorded which files it
+    /// installed. There's nothing to tell the player's edits apart from
+    /// Drop's by, so it falls back to the server's list of changed files.
+    fn is_untracked_update(&self) -> bool {
+        self.dropdata.previously_installed_version.is_some()
+            && lock!(self.dropdata.installed_files).is_empty()
+    }
+
+    async fn plan_files(
+        &self,
+        app_handle: &AppHandle,
+        manifests_chunks: &[(String, HashMap<String, ChunkData>, [u8; 16])],
+        file_list: &HashMap<String, String>,
+        file_hashes: &HashMap<String, String>,
+    ) -> Result<Option<FilePlan>, ApplicationDownloadError> {
+        if self.is_untracked_update() {
+            let mut plan = FilePlan::default();
+            for (version_id, chunks, _) in manifests_chunks {
+                for f in chunks.values().flat_map(|c| c.files.iter()) {
+                    if file_list.get(&f.filename) == Some(version_id) {
+                        plan.write
+                            .insert(f.filename.clone(), file_hashes.get(&f.filename).cloned());
+                    }
+                }
+            }
+            for path in file_list.keys() {
+                if !plan.write.contains_key(path) {
+                    plan.unchanged.insert(path.clone(), None);
+                }
+            }
+            return Ok(Some(plan));
+        }
+
+        let records = self.dropdata.get_installed_files();
+        let base_path = self.dropdata.base_path.clone();
+        let (list, hashes) = (file_list.clone(), file_hashes.clone());
+        let mut plan = tokio::task::spawn_blocking(move || {
+            compute_plan(&records, &list, &hashes, &mut InstallDisk { base_path })
+        })
+        .await
+        .map_err(|e| ApplicationDownloadError::IoError(Arc::new(io::Error::other(e))))?;
+
+        if plan.conflicts.is_empty() {
+            return Ok(Some(plan));
+        }
+        match self.wait_for_choices(app_handle, &plan.conflicts).await {
+            Some(choices) => {
+                plan.resolve(&choices);
+                Ok(Some(plan))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Shows the player the files of theirs this download would change and
+    /// waits for their answer. `None` if the download was paused or
+    /// cancelled first.
+    async fn wait_for_choices(
+        &self,
+        app_handle: &AppHandle,
+        conflicts: &[FileConflict],
+    ) -> Option<HashMap<String, ConflictChoice>> {
+        let game_id = self.metadata.id.clone();
+        let game_name = get_cached_object::<Game>(&format!("game/{game_id}"))
+            .map(|g| g.m_name)
+            .unwrap_or_else(|_| game_id.clone());
+        let pending = PendingConflicts {
+            meta: self.metadata.clone(),
+            game_name,
+            conflicts: conflicts.to_vec(),
+        };
+        info!(
+            "{game_id}: {} file(s) the player changed would be changed or removed, waiting for their choice",
+            conflicts.len()
+        );
+        register_pending(pending.clone());
+        *lock!(self.status) = DownloadStatus::WaitingForInput;
+        send!(self.sender, DownloadManagerSignal::UpdateUIQueue);
+        app_emit!(app_handle, "download_file_conflicts", pending);
+
+        loop {
+            if let Some(choices) = take_answer(&game_id) {
+                *lock!(self.status) = DownloadStatus::Downloading;
+                send!(self.sender, DownloadManagerSignal::UpdateUIQueue);
+                return Some(choices);
+            }
+            if self.control_flag.get() == DownloadThreadControlFlag::Stop {
+                clear_pending(&game_id);
+                app_emit!(app_handle, "download_file_conflicts_cleared", &game_id);
+                // Back in line, so resuming asks again rather than leaving
+                // the download stuck.
+                *lock!(self.status) = DownloadStatus::Queued;
+                send!(self.sender, DownloadManagerSignal::UpdateUIQueue);
+                return None;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    /// Deletes what the plan removes and clears out files about to be
+    /// rewritten, recording each as mid-write so a pause doesn't make Drop's
+    /// half-written file look like an edit by the player.
+    fn start_plan(&self, plan: &FilePlan) -> Result<(), ApplicationDownloadError> {
+        let base_path = &self.dropdata.base_path;
+        let remove = |path: &str| match remove_file(base_path.join(path)) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(ApplicationDownloadError::IoError(Arc::new(e))),
+        };
+
+        {
+            let mut records = lock!(self.dropdata.installed_files);
+            for path in &plan.delete {
+                remove(path)?;
+                records.remove(path);
+            }
+            for path in &plan.untrack {
+                records.remove(path);
+            }
+            for (path, target) in &plan.write {
+                let record = records.entry(path.clone()).or_default();
+                if record.pending_hash.is_none() {
+                    // Chunks are written into the file in place, so start
+                    // from nothing rather than leave a longer old file's tail.
+                    remove(path)?;
+                    record.pending_hash = Some(target.clone().unwrap_or_default());
+                }
+            }
+        }
+        self.dropdata.write();
+        Ok(())
+    }
+
+    /// Records what's now installed, as the baseline for the next update.
+    fn finish_plan(&self, plan: &FilePlan, file_list: &HashMap<String, String>) {
+        {
+            let mut records = lock!(self.dropdata.installed_files);
+            for (path, current) in &plan.unchanged {
+                let target = self.dl_info_hash(path).or_else(|| current.clone());
+                let owner = file_list.get(path).cloned();
+                match records.get_mut(path) {
+                    Some(record) => {
+                        // Still the content Drop would install (not an edit
+                        // the player kept): refresh the baseline.
+                        if current.is_none() || current == &target {
+                            record.server_hash = target;
+                            record.declined_hash = None;
+                        }
+                        record.owner = owner;
+                    }
+                    None => {
+                        records.insert(
+                            path.clone(),
+                            InstalledFileRecord {
+                                server_hash: target,
+                                owner,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                }
+            }
+            for (path, target) in &plan.declined {
+                let record = records.entry(path.clone()).or_default();
+                record.declined_hash = target.clone();
+                record.owner = file_list.get(path).cloned();
+            }
+            for path in plan.write.keys() {
+                if let Some(record) = records.get_mut(path) {
+                    record.owner = file_list.get(path).cloned();
+                }
+            }
+        }
+        self.dropdata.write();
+    }
+
+    fn dl_info_hash(&self, path: &str) -> Option<String> {
+        lock!(self.dl_info)
+            .as_ref()
+            .and_then(|dl_info| dl_info.file_hashes.get(path).cloned())
     }
 
     // See the call site in `run()` above for why this exists. Failing like a
@@ -596,14 +803,15 @@ impl GameDownloadAgent {
     // control flag between files - otherwise the download manager's stop
     // handling gives up waiting on us and the download can only be halted by
     // killing the app.
-    async fn verify_installed_files(
+    async fn verify_written_files(
         &self,
         base_path: &Path,
+        plan: &FilePlan,
     ) -> Result<bool, ApplicationDownloadError> {
-        let installed_files = self.dropdata.get_installed_files();
         let mut corrupted_chunk_ids: HashSet<String> = HashSet::new();
+        let mut uncovered = false;
 
-        for (relative_path, record) in installed_files.iter() {
+        for (relative_path, target) in &plan.write {
             if self.control_flag.get() == DownloadThreadControlFlag::Stop {
                 info!(
                     "verification of {} interrupted by a stop signal",
@@ -618,8 +826,12 @@ impl GameDownloadAgent {
             // goes on the blocking pool rather than parking an async runtime
             // worker for the duration.
             let hash_path = file_path.clone();
-            let hash = match tokio::task::spawn_blocking(move || hash_file(&hash_path)).await {
-                Ok(Ok(hash)) => hash,
+            let hashed = tokio::task::spawn_blocking(move || {
+                hash_file(&hash_path).map(|hash| (hash, file_metadata(&hash_path)))
+            })
+            .await;
+            let (hash, metadata) = match hashed {
+                Ok(Ok(v)) => v,
                 Ok(Err(e)) => {
                     warn!("could not hash installed file {}: {e}", file_path.display());
                     continue;
@@ -633,36 +845,52 @@ impl GameDownloadAgent {
                 }
             };
 
-            if let Some(server_hash) = &record.server_hash
-                && server_hash != &hash
+            if let Some(target) = target
+                && target != &hash
             {
                 warn!(
-                    "installed file {} doesn't match the server's hash (expected {server_hash}, got {hash}) - treating as a corrupted download",
+                    "installed file {} doesn't match the server's hash (expected {target}, got {hash}) - treating as a corrupted download",
                     file_path.display()
                 );
                 let _ = remove_file(&file_path);
 
-                {
-                    let dl_info = lock!(self.dl_info);
-                    if let Some(dl_info) = dl_info.as_ref() {
-                        for manifest in dl_info.manifests.values() {
-                            for (chunk_id, chunk_data) in manifest.chunks.iter() {
-                                if chunk_data
-                                    .files
-                                    .iter()
-                                    .any(|f| &f.filename == relative_path)
-                                {
-                                    corrupted_chunk_ids.insert(chunk_id.clone());
-                                }
+                let dl_info = lock!(self.dl_info);
+                let mut covered = false;
+                if let Some(dl_info) = dl_info.as_ref() {
+                    for manifest in dl_info.manifests.values() {
+                        for (chunk_id, chunk_data) in manifest.chunks.iter() {
+                            if chunk_data
+                                .files
+                                .iter()
+                                .any(|f| &f.filename == relative_path)
+                            {
+                                corrupted_chunk_ids.insert(chunk_id.clone());
+                                covered = true;
                             }
                         }
                     }
                 }
+                // Nothing we were given can rebuild this file, so the
+                // manifest is out of date: a full one is fetched instead of
+                // reporting success with the file missing.
+                uncovered |= !covered;
                 continue;
             }
 
-            self.dropdata
-                .set_installed_file_client_hash(relative_path, hash);
+            let mut records = lock!(self.dropdata.installed_files);
+            let record = records.entry(relative_path.clone()).or_default();
+            record.server_hash = target.clone();
+            record.client_hash = Some(hash);
+            record.size = metadata.map(|m| m.0);
+            record.modified_ns = metadata.map(|m| m.1);
+            record.pending_hash = None;
+            record.declined_hash = None;
+        }
+
+        if uncovered {
+            self.dropdata.set_contexts(&[]);
+            self.dropdata.write();
+            return Err(ApplicationDownloadError::ContentOutOfSync);
         }
 
         if !corrupted_chunk_ids.is_empty() {
@@ -681,7 +909,7 @@ impl GameDownloadAgent {
 
     #[allow(dead_code)]
     fn setup_validate(&self, app_handle: &AppHandle) {
-        self.setup_progress();
+        self.setup_progress(0, 0, 0);
 
         self.control_flag.set(DownloadThreadControlFlag::Go);
 
@@ -858,4 +1086,37 @@ impl Downloadable for GameDownloadAgent {
     fn status(&self) -> DownloadStatus {
         lock!(self.status).clone()
     }
+}
+
+/// Bytes an update over a tracked install will write: every file whose
+/// content differs from what Drop last installed. Ignores the player's edits
+/// (which only ever make it write less), so it's an upper bound.
+fn estimate_write_bytes(
+    dl_info: &DownloadInformation,
+    records: &HashMap<String, InstalledFileRecord>,
+) -> u64 {
+    let needs_write = |path: &str, owner: &str| match records.get(path) {
+        None => true,
+        Some(record) if record.pending_hash.is_some() => true,
+        Some(record) => match (dl_info.file_hashes.get(path), record.baseline()) {
+            (Some(target), Some(baseline)) => target != baseline,
+            _ => record.owner.as_deref() != Some(owner),
+        },
+    };
+    dl_info
+        .manifests
+        .iter()
+        .flat_map(|(version_id, manifest)| {
+            manifest
+                .chunks
+                .values()
+                .flat_map(|c| c.files.iter())
+                .map(move |f| (version_id, f))
+        })
+        .filter(|(version_id, f)| {
+            dl_info.file_list.get(&f.filename) == Some(*version_id)
+                && needs_write(&f.filename, version_id)
+        })
+        .map(|(_, f)| f.length as u64)
+        .sum()
 }

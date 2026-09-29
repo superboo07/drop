@@ -131,6 +131,11 @@ async fn setup(handle: AppHandle) -> AppState {
         false => UmuState::NotInstalled,
     };
 
+    #[cfg(target_os = "linux")]
+    if umu_state == UmuState::Installed {
+        prefetch_winetricks_verbs();
+    }
+
     scan_install_dirs();
 
     if !is_set_up {

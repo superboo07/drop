@@ -276,7 +276,7 @@ pub fn run_winecfg(game_id: String) -> Result<(), ProcessError> {
     run_wine_tool(game_id, "winecfg", &[], &[])
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WinetricksVerb {
     pub category: String,
@@ -284,18 +284,58 @@ pub struct WinetricksVerb {
     pub description: String,
 }
 
-// Verb availability doesn't depend on a specific game/prefix, so this just
-// runs the system winetricks directly rather than going through umu-run.
+// `winetricks list-all` can take minutes on some systems and the verb list
+// doesn't depend on a specific game/prefix, so it's fetched at most once
+// per session (prefetched at startup, see prefetch_winetricks_verbs) and
+// also kept on disk across sessions, keyed on the winetricks script itself.
 #[cfg(target_os = "linux")]
-#[tauri::command]
-pub fn list_winetricks_verbs() -> Result<Vec<WinetricksVerb>, ProcessError> {
-    let mut command = std::process::Command::new("winetricks");
-    command.arg("list-all");
-    sanitize_external_command(&mut command);
+static WINETRICKS_VERBS: std::sync::nonpoison::Mutex<Option<Arc<Vec<WinetricksVerb>>>> =
+    std::sync::nonpoison::Mutex::new(None);
 
-    let output = command.output()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
+#[cfg(target_os = "linux")]
+#[derive(Serialize, Deserialize, PartialEq)]
+struct WinetricksFingerprint {
+    size: u64,
+    modified_nanos: u128,
+}
 
+#[cfg(target_os = "linux")]
+#[derive(Serialize, Deserialize)]
+struct WinetricksVerbsDiskCache {
+    fingerprint: WinetricksFingerprint,
+    verbs: Vec<WinetricksVerb>,
+}
+
+#[cfg(target_os = "linux")]
+fn winetricks_verbs_cache_path() -> std::path::PathBuf {
+    DATA_ROOT_DIR.join("winetricks-verbs.json")
+}
+
+// Size + mtime rather than path: inside the AppImage the vendored copy's
+// path changes with every mount point, but its metadata doesn't.
+#[cfg(target_os = "linux")]
+fn winetricks_fingerprint(command: &std::process::Command) -> Option<WinetricksFingerprint> {
+    let path_var = command
+        .get_envs()
+        .find(|(key, _)| *key == "PATH")
+        .and_then(|(_, value)| value.map(|v| v.to_os_string()))
+        .or_else(|| std::env::var_os("PATH"))?;
+    let metadata = std::env::split_paths(&path_var)
+        .map(|dir| dir.join("winetricks"))
+        .find_map(|path| std::fs::metadata(path).ok().filter(|m| m.is_file()))?;
+    Some(WinetricksFingerprint {
+        size: metadata.len(),
+        modified_nanos: metadata
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_nanos(),
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn parse_winetricks_list_all(stdout: &str) -> Vec<WinetricksVerb> {
     let mut verbs = Vec::new();
     let mut current_category = String::new();
     for line in stdout.lines() {
@@ -323,8 +363,87 @@ pub fn list_winetricks_verbs() -> Result<Vec<WinetricksVerb>, ProcessError> {
             description: line[split_at..].trim().to_string(),
         });
     }
+    verbs
+}
 
+// Blocking. Holding the lock for the whole run means concurrent callers
+// (the startup prefetch and an opened Proton tab) share one winetricks run
+// instead of starting their own. Failures aren't cached, so the next call
+// retries.
+#[cfg(target_os = "linux")]
+fn winetricks_verbs() -> Result<Arc<Vec<WinetricksVerb>>, ProcessError> {
+    let mut cached = WINETRICKS_VERBS.lock();
+    if let Some(verbs) = cached.as_ref() {
+        return Ok(verbs.clone());
+    }
+
+    // Verb availability doesn't depend on a specific game/prefix, so this
+    // just runs the system winetricks directly rather than going through
+    // umu-run.
+    let mut command = std::process::Command::new("winetricks");
+    command.arg("list-all");
+    sanitize_external_command(&mut command);
+
+    let fingerprint = winetricks_fingerprint(&command);
+    let cache_path = winetricks_verbs_cache_path();
+    if let Some(fingerprint) = &fingerprint
+        && let Ok(data) = std::fs::read(&cache_path)
+        && let Ok(disk) = serde_json::from_slice::<WinetricksVerbsDiskCache>(&data)
+        && disk.fingerprint == *fingerprint
+    {
+        info!(
+            "loaded {} winetricks verbs from {}",
+            disk.verbs.len(),
+            cache_path.display()
+        );
+        let verbs = Arc::new(disk.verbs);
+        *cached = Some(verbs.clone());
+        return Ok(verbs);
+    }
+
+    let output = command.output()?;
+    let verbs = parse_winetricks_list_all(&String::from_utf8_lossy(&output.stdout));
+    if verbs.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "winetricks list-all returned no verbs ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+        .into());
+    }
+
+    if let Some(fingerprint) = fingerprint {
+        let disk = serde_json::json!({ "fingerprint": fingerprint, "verbs": &verbs });
+        if let Err(e) = std::fs::write(&cache_path, disk.to_string()) {
+            log::warn!("failed to write {}: {e}", cache_path.display());
+        }
+    }
+
+    let verbs = Arc::new(verbs);
+    *cached = Some(verbs.clone());
     Ok(verbs)
+}
+
+// Warms the cache in the background so the Proton tab usually has the list
+// ready by the time it's opened.
+#[cfg(target_os = "linux")]
+pub fn prefetch_winetricks_verbs() {
+    tauri::async_runtime::spawn_blocking(|| {
+        if let Err(e) = winetricks_verbs() {
+            log::warn!("failed to prefetch winetricks verbs: {e}");
+        }
+    });
+}
+
+// Async so it runs off the main thread: a sync command would freeze the
+// whole window for as long as winetricks takes.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn list_winetricks_verbs() -> Result<Vec<WinetricksVerb>, ProcessError> {
+    let verbs = tauri::async_runtime::spawn_blocking(winetricks_verbs)
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))??;
+    Ok(verbs.as_ref().clone())
 }
 
 // Locales the host actually has generated (`locale -a`), so the per-game

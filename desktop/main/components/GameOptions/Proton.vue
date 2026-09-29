@@ -79,6 +79,13 @@
         {{ verbsError }}
       </p>
 
+      <p
+        v-else-if="verbsLoading && query.trim()"
+        class="mt-2 text-sm text-zinc-400"
+      >
+        Loading winetricks verbs…
+      </p>
+
       <ul
         v-else-if="query.trim()"
         class="mt-3 max-h-64 divide-y divide-zinc-800 overflow-y-auto rounded-md bg-white/5"
@@ -173,6 +180,7 @@ type WinetricksVerb = {
 
 const verbs = ref<WinetricksVerb[]>([]);
 const verbsError = ref<string | undefined>();
+const verbsLoading = ref(true);
 const query = ref("");
 
 const filteredVerbs = computed(() => {
@@ -187,11 +195,14 @@ const filteredVerbs = computed(() => {
     .slice(0, 50);
 });
 
-invokeWithTimeout<WinetricksVerb[]>("list_winetricks_verbs")
+// Runs in the background on the Rust side and is cached there, but the
+// first `winetricks list-all` of a session can take minutes on some systems.
+invokeWithTimeout<WinetricksVerb[]>("list_winetricks_verbs", undefined, 300_000)
   .then((result) => (verbs.value = result))
   .catch((error) => {
     verbsError.value = (error as unknown as string).toString();
-  });
+  })
+  .finally(() => (verbsLoading.value = false));
 
 const installStatus = ref<string | undefined>();
 const installError = ref(false);

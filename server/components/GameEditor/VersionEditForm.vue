@@ -219,6 +219,17 @@
           </Switch>
         </SwitchGroup>
 
+        <div v-if="form.delta" class="bg-zinc-800 p-4 rounded-xl">
+          <GameEditorUpdateBase
+            v-model="form.baseVersionId"
+            :game-id="gameId"
+            :versions="versions"
+            :editing-version-id="version.versionId"
+            :target="{ versionId: version.versionId }"
+            :target-name="version.displayName ?? version.versionPath ?? ''"
+          />
+        </div>
+
         <div v-if="error" class="w-fit rounded-md bg-red-600/10 p-4">
           <div class="flex">
             <div class="flex-shrink-0">
@@ -276,6 +287,8 @@ const props = defineProps<{
   gameId: string;
   gameType: GameType;
   version: SerializeObject<AdminFetchGameType>["versions"][number];
+  // Every version of the game, to pick an update-mode base from.
+  versions: SerializeObject<AdminFetchGameType>["versions"];
 }>();
 
 const emit = defineEmits<{ saved: [] }>();
@@ -288,6 +301,7 @@ type FormSetup = (typeof ImportVersion.infer)["setups"][number];
 interface VersionForm {
   displayName: string;
   delta: boolean;
+  baseVersionId: string | null | undefined;
   onlySetup: boolean;
   launches: FormLaunch[];
   // Parallel to launches: display info for each launch's emulator
@@ -299,6 +313,7 @@ function buildForm(): VersionForm {
   return {
     displayName: props.version.displayName ?? "",
     delta: props.version.delta,
+    baseVersionId: props.version.baseVersionId,
     onlySetup: props.version.onlySetup,
     launches: props.version.launches.map((l) => ({
       name: l.name,
@@ -359,6 +374,7 @@ async function save() {
         versionId: props.version.versionId,
         displayName: form.value.displayName || undefined,
         delta: form.value.delta,
+        baseVersionId: form.value.delta ? form.value.baseVersionId : null,
         onlySetup: form.value.onlySetup,
         launches: form.value.launches,
         setups: form.value.setups,

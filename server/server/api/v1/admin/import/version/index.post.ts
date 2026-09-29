@@ -29,6 +29,8 @@ export const ImportVersion = type({
 
   onlySetup: "boolean = false",
   delta: "boolean = false",
+  // Required when delta is set: the version these files go on top of.
+  baseVersionId: "string?",
 
   requiredContent: type("string")
     .array()

@@ -9,7 +9,10 @@ import {
   buildSetupCreateData,
   validateVersionMetadata,
 } from "~/server/internal/library";
-import { invalidateManifestCache } from "~/server/internal/library/manifest";
+import {
+  fetchDeltaDependents,
+  invalidateManifestCache,
+} from "~/server/internal/library/manifest";
 
 const UpdateVersionConfig = type({
   versionId: "string",
@@ -31,6 +34,7 @@ const UpdateVersionConfig = type({
 
   onlySetup: "boolean = false",
   delta: "boolean = false",
+  baseVersionId: "string | null?",
 }).configure(throwingArktype);
 
 export default defineEventHandler(async (h3) => {
@@ -42,7 +46,7 @@ export default defineEventHandler(async (h3) => {
 
   const existing = await prisma.gameVersion.findFirst({
     where: { versionId: body.versionId, gameId },
-    select: { versionId: true, delta: true },
+    select: { versionId: true, delta: true, baseVersionId: true },
   });
   if (!existing)
     throw createError({ statusCode: 404, statusMessage: "Version not found" });
@@ -55,6 +59,7 @@ export default defineEventHandler(async (h3) => {
     throw createError({ statusCode: 404, statusMessage: "Game not found" });
 
   await validateVersionMetadata(gameId, body, body.versionId);
+  const baseVersionId = body.delta ? (body.baseVersionId ?? null) : null;
 
   await prisma.$transaction([
     prisma.launchConfiguration.deleteMany({
@@ -68,6 +73,7 @@ export default defineEventHandler(async (h3) => {
       data: {
         displayName: body.displayName ?? null,
         delta: body.delta,
+        baseVersionId: baseVersionId,
         onlySetup: body.onlySetup,
       },
     }),
@@ -85,10 +91,20 @@ export default defineEventHandler(async (h3) => {
     }),
   ]);
 
-  // delta is the only field here that affects manifest chain resolution
-  if (body.delta !== existing.delta) {
-    await invalidateManifestCache(body.versionId);
-    await gameSizeManager.invalidateVersion(body.versionId);
+  // delta and its base are the only fields here that affect manifest chain
+  // resolution - for this version and everything built on top of it.
+  if (
+    body.delta !== existing.delta ||
+    baseVersionId !== existing.baseVersionId
+  ) {
+    const dependents = await fetchDeltaDependents(gameId, body.versionId);
+    for (const target of [
+      body.versionId,
+      ...dependents.map((d) => d.versionId),
+    ]) {
+      await invalidateManifestCache(target);
+      await gameSizeManager.invalidateVersion(target);
+    }
     await gameSizeManager.invalidateGame(gameId);
   }
 

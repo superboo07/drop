@@ -44,48 +44,14 @@ export async function createDownloadManifestDetails(
     return (await manifestCache.get(manifestKey))!;
   const mainVersion = await prisma.gameVersion.findUnique({
     where: { versionId },
-    select: {
-      versionId: true,
-      delta: true,
-      versionIndex: true,
-      fileList: true,
-      negativeFileList: true,
-      gameId: true,
-      dropletManifest: true,
-    },
+    select: chainVersionSelect,
   });
   if (!mainVersion)
     throw createError({ statusCode: 404, message: "Version not found" });
 
-  const collectedVersions = [];
-  let versionIndex = mainVersion.versionIndex;
-  while (mainVersion.delta) {
-    const nextVersion = await prisma.gameVersion.findFirst({
-      where: { gameId: mainVersion.gameId, versionIndex: { lt: versionIndex } },
-      orderBy: {
-        versionIndex: "desc",
-      },
-      select: {
-        versionId: true,
-        versionIndex: true,
-        delta: true,
-        fileList: true,
-        negativeFileList: true,
-        dropletManifest: true,
-      },
-    });
-    if (!nextVersion)
-      throw createError({
-        statusCode: 500,
-        message: "Delta version without version underneath it.",
-      });
-
-    versionIndex = nextVersion.versionIndex;
-    collectedVersions.push(nextVersion);
-    if (!nextVersion.delta) break;
-  }
-
-  collectedVersions.reverse();
+  const collectedVersions = mainVersion.delta
+    ? await resolveBaseChain(mainVersion.baseVersionId, mainVersion.versionId)
+    : [];
   // Apply fileList in lowest priority to newest priority
   const versionOrder = [...collectedVersions, mainVersion];
 
@@ -163,14 +129,62 @@ export async function createDownloadManifestDetails(
   return result;
 }
 
+const chainVersionSelect = {
+  versionId: true,
+  delta: true,
+  baseVersionId: true,
+  fileList: true,
+  negativeFileList: true,
+  dropletManifest: true,
+} as const;
+
+/**
+ * Walks a delta version's base links down to the first full version and
+ * returns that chain lowest-priority first (full version, then each delta on
+ * top of it), not including the version the walk started from.
+ * `startingFrom` is only used to name the version in errors and to catch a
+ * chain that loops back on itself.
+ */
+export async function resolveBaseChain(
+  baseVersionId: string | null,
+  startingFrom: string,
+) {
+  const chain = [];
+  const seen = new Set([startingFrom]);
+  let nextId = baseVersionId;
+  while (true) {
+    if (!nextId)
+      throw createError({
+        statusCode: 500,
+        message: `Update-mode version ${startingFrom} has no base version to apply on top of.`,
+      });
+    if (seen.has(nextId))
+      throw createError({
+        statusCode: 500,
+        message: `Update-mode version ${startingFrom} has a base chain that loops back on itself.`,
+      });
+    seen.add(nextId);
+
+    const next = await prisma.gameVersion.findUnique({
+      where: { versionId: nextId },
+      select: chainVersionSelect,
+    });
+    if (!next)
+      throw createError({
+        statusCode: 500,
+        message: `Base version ${nextId} of ${startingFrom} no longer exists.`,
+      });
+    chain.push(next);
+    if (!next.delta) break;
+    nextId = next.baseVersionId;
+  }
+  return chain.reverse();
+}
+
 /**
  * Finds every version whose cached manifest resolution depends on
- * `versionId`'s files - i.e. the maximal run of `delta: true` versions
- * immediately above it in `versionIndex` order, stopping at (and excluding)
- * the first non-delta version. Mirrors the backward walk this file does
- * above: a version's chain always stops at the nearest non-delta version at
- * or below it, so nothing past the next non-delta boundary can resolve
- * through `versionId`.
+ * `versionId`'s files - every delta version that has it somewhere in its
+ * base chain, i.e. all of its descendants in the base-version tree.
  */
 export async function fetchDeltaDependents(gameId: string, versionId: string) {
   const versions = await prisma.gameVersion.findMany({
@@ -180,19 +194,73 @@ export async function fetchDeltaDependents(gameId: string, versionId: string) {
       versionId: true,
       versionIndex: true,
       delta: true,
+      baseVersionId: true,
       displayName: true,
       versionPath: true,
     },
   });
-  const idx = versions.findIndex((v) => v.versionId === versionId);
-  if (idx === -1) return [];
 
+  const reached = new Set([versionId]);
   const dependents = [];
-  for (let i = idx + 1; i < versions.length; i++) {
-    if (!versions[i].delta) break;
-    dependents.push(versions[i]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const version of versions) {
+      if (reached.has(version.versionId)) continue;
+      if (!version.delta || !version.baseVersionId) continue;
+      if (!reached.has(version.baseVersionId)) continue;
+      reached.add(version.versionId);
+      dependents.push(version);
+      grew = true;
+    }
   }
-  return dependents;
+  return dependents.sort((a, b) => a.versionIndex - b.versionIndex);
+}
+
+/**
+ * Every version whose installed files are tied to `versionId`'s through
+ * update-mode bases: the full version at the root of its chain, then every
+ * update built on that root (side branches included), bases before the
+ * updates on top of them. A version that isn't part of any chain comes back
+ * on its own.
+ */
+export async function fetchUpdateFamily(gameId: string, versionId: string) {
+  const versions = await prisma.gameVersion.findMany({
+    where: { gameId },
+    orderBy: { versionIndex: "asc" },
+    select: {
+      versionId: true,
+      versionIndex: true,
+      delta: true,
+      baseVersionId: true,
+      displayName: true,
+      versionPath: true,
+    },
+  });
+  const byId = new Map(versions.map((v) => [v.versionId, v]));
+
+  let root = byId.get(versionId);
+  if (!root) return [];
+  const seen = new Set([root.versionId]);
+  while (root.delta && root.baseVersionId) {
+    const next = byId.get(root.baseVersionId);
+    if (!next || seen.has(next.versionId)) break;
+    seen.add(next.versionId);
+    root = next;
+  }
+
+  const family = [root];
+  const reached = new Set([root.versionId]);
+  for (let i = 0; i < family.length; i++) {
+    for (const version of versions) {
+      if (reached.has(version.versionId)) continue;
+      if (!version.delta || version.baseVersionId !== family[i].versionId)
+        continue;
+      reached.add(version.versionId);
+      family.push(version);
+    }
+  }
+  return family;
 }
 
 /**

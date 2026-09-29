@@ -149,6 +149,13 @@ model GameVersion {
   versionIndex Int
   delta        Boolean @default(false)
 
+  // The version a delta ("update mode") version's files are applied on top
+  // of, which may itself be a delta - the chain is followed down to a full
+  // version. Always null for non-delta versions.
+  baseVersionId   String?
+  baseVersion     GameVersion?  @relation(name: "deltaBase", fields: [baseVersionId], references: [versionId], onDelete: SetNull)
+  deltaDependents GameVersion[] @relation(name: "deltaBase")
+
   requiredContent  GameVersion[] @relation(name: "requiredContent")
   requiringContent GameVersion[] @relation(name: "requiredContent")
 }

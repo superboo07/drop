@@ -445,8 +445,32 @@
           "setupDesc": "Ran once when the game is installed",
           "setupMode": "Setup mode",
           "setupModeDesc": "When enabled, this version does not have a launch command, and simply runs the executable on the user's computer. Useful for games that only distribute installer and not portable files.",
+          "updateBase": {
+            "added": "{0} new",
+            "baseInstall": "Installed on {0}",
+            "baseInstallDesc": "Players who already have the base version only download this version's files.",
+            "dependents": "Other versions are built on this one, so changing it also changes what they install: {0}",
+            "desc": "The version these files are installed on top of. If it's an update itself, its own base is installed first, down to a full version.",
+            "files": "{n} files | {n} file | {n} files",
+            "full": "Full",
+            "fullOption": "full version",
+            "label": "Base version",
+            "loading": "Loading install path…",
+            "newest": "newest",
+            "noCandidates": "Import a full version first. Update mode needs a version to install on top of.",
+            "overwritten": "{0} overwritten",
+            "path": "Install path",
+            "pathSummary": "{0} steps, starting from {1}",
+            "previewError": "Couldn't load the install path: {0}",
+            "removed": "{0} removed",
+            "select": "Select a base version",
+            "skipped": "Newer versions that aren't part of this path: {0}",
+            "thisVersion": "This version",
+            "update": "Update",
+            "updateOf": "update of {0}"
+          },
           "updateMode": "Update mode",
-          "updateModeDesc": "When enabled, these files will be installed on top of (overwriting) the previous version's. If multiple \"update modes\" are chained together, they are applied in order.",
+          "updateModeDesc": "When enabled, these files are installed on top of (overwriting) the base version you choose.",
           "version": "Select version to import"
         },
         "withoutMetadata": "Import without metadata"
@@ -592,18 +616,20 @@
           "action": "Replace files",
           "noneAvailable": "No staged uploads available",
           "picker": "Staged upload to apply",
+          "related": "This version is part of an update chain, so these versions will be resynced from disk after the files are replaced: {0}",
           "title": "Replace version files"
         },
         "resync": {
           "action": "Resync files",
           "confirmDesc": "This will rescan {0}'s files on disk and update its manifest to match. Already-downloaded clients won't be affected unless they redownload.",
-          "confirmTitle": "Resync version files?",
-          "forceAction": "Resync anyway",
-          "forceTitle": "Delta versions depend on this one"
+          "confirmDescRelated": "This will rescan {0}'s files on disk and update its manifest to match. It's part of an update chain, so these versions will be resynced with it: {1}. Already-downloaded clients won't be affected unless they redownload.",
+          "confirmTitle": "Resync version files?"
         },
         "setupOnly": "Version configured as in setup-only mode.",
         "table": {
           "delta": "Update mode",
+          "deltaBase": "On top of {0}",
+          "deltaOff": "Off",
           "launch": "Launch Configurations",
           "name": "Name (ID)",
           "path": "Path",

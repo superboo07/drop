@@ -6,7 +6,6 @@ import libraryManager from "~/server/internal/library";
 const DepotReplaceVersion = type({
   versionId: "string",
   unimportedVersionId: "string",
-  force: "boolean = false",
 }).configure(throwingArktype);
 
 export default defineEventHandler(async (h3) => {
@@ -20,7 +19,6 @@ export default defineEventHandler(async (h3) => {
     gameId,
     body.versionId,
     body.unimportedVersionId,
-    body.force,
   );
   if (!taskId)
     throw createError({

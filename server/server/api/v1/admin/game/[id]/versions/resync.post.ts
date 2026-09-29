@@ -5,7 +5,6 @@ import libraryManager from "~/server/internal/library";
 
 const ResyncVersion = type({
   versionId: "string",
-  force: "boolean = false",
 }).configure(throwingArktype);
 
 export default defineEventHandler(async (h3) => {
@@ -18,7 +17,6 @@ export default defineEventHandler(async (h3) => {
   const taskId = await libraryManager.resyncLocalVersion(
     gameId,
     body.versionId,
-    body.force,
   );
   if (!taskId)
     throw createError({

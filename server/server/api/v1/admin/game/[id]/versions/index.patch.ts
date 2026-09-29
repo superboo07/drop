@@ -21,8 +21,6 @@ export default defineEventHandler(async (h3) => {
     select: {
       versionId: true,
       versionIndex: true,
-      delta: true,
-      launches: { select: { platform: true } },
     },
   });
 
@@ -36,19 +34,8 @@ export default defineEventHandler(async (h3) => {
       statusMessage: "Sorting versions yielded less results, somehow.",
     });
 
-  // Validate the new order
-  const has: { [key: string]: boolean } = {};
-  for (const version of versions) {
-    for (const versionPlatform of version.launches.map((v) => v.platform)) {
-      if (version.delta && !has[versionPlatform])
-        throw createError({
-          statusCode: 400,
-          statusMessage: `"${version.versionId}" requires a base version to apply the delta to for platform ${versionPlatform}.`,
-        });
-      has[versionPlatform] = true;
-    }
-  }
-
+  // Order is display-only: update-mode versions name their base explicitly
+  // rather than building on whatever sits below them.
   await prisma.$transaction(
     versions.map((version, versionIndex) =>
       prisma.gameVersion.updateMany({

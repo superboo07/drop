@@ -98,7 +98,14 @@
                     {{ version.versionPath }}
                   </td>
                   <td class="px-3 py-4 text-sm whitespace-nowrap text-gray-400">
-                    {{ version.delta }}
+                    <span v-if="version.delta">{{
+                      $t("library.admin.version.table.deltaBase", [
+                        baseVersionName(version),
+                      ])
+                    }}</span>
+                    <span v-else class="text-zinc-600">{{
+                      $t("library.admin.version.table.deltaOff")
+                    }}</span>
                   </td>
 
                   <td class="px-3 py-4 text-sm whitespace-nowrap text-gray-400">
@@ -176,6 +183,7 @@
       :game-id="game.id"
       :game-type="game.type"
       :version="editingVersion"
+      :versions="game.versions"
       @saved="refreshGame"
     />
     <ModalTemplate v-model="showReplaceModal">
@@ -249,6 +257,16 @@
               </ListboxOptions>
             </div>
           </Listbox>
+          <p
+            v-if="replaceRelatedNames.length > 0"
+            class="text-sm text-zinc-400"
+          >
+            {{
+              $t("library.admin.version.replace.related", [
+                replaceRelatedNames.join(", "),
+              ])
+            }}
+          </p>
           <div v-if="replaceError" class="w-fit rounded-md bg-red-600/10 p-4">
             <div class="flex">
               <div class="flex-shrink-0">
@@ -269,7 +287,7 @@
           :loading="replaceLoading"
           :disabled="!selectedUnimportedVersionId"
           class="inline-flex w-full shadow-sm sm:ml-3 sm:w-auto"
-          @click="() => performReplace(false)"
+          @click="() => performReplace()"
         >
           {{ $t("library.admin.version.replace.action") }}
         </LoadingButton>
@@ -342,6 +360,14 @@ if (!game.value)
   });
 
 type VersionType = (typeof game.value.versions)[number];
+
+function baseVersionName(version: VersionType) {
+  const base = game.value.versions.find(
+    (v) => v.versionId === version.baseVersionId,
+  );
+  if (!base) return "?";
+  return base.displayName ?? base.versionPath ?? base.versionId;
+}
 
 async function updateVersionOrder() {
   try {
@@ -440,55 +466,68 @@ function showResyncError(e: unknown) {
   );
 }
 
-async function performResync(version: VersionType, force: boolean) {
+// Mirrors fetchUpdateFamily on the server: the full version at the root of
+// this version's update chain plus every update built on it. Resyncing or
+// replacing any of them resyncs the local ones among the rest too.
+function relatedVersionNames(version: VersionType) {
+  const byId = new Map(game.value.versions.map((v) => [v.versionId, v]));
+  let root = version;
+  const seen = new Set([root.versionId]);
+  while (root.delta && root.baseVersionId) {
+    const next = byId.get(root.baseVersionId);
+    if (!next || seen.has(next.versionId)) break;
+    seen.add(next.versionId);
+    root = next;
+  }
+  const family = [root];
+  for (let i = 0; i < family.length; i++)
+    for (const v of game.value.versions)
+      if (
+        v.delta &&
+        v.baseVersionId === family[i].versionId &&
+        !family.includes(v)
+      )
+        family.push(v);
+  return family
+    .filter((v) => v.versionId !== version.versionId && v.versionPath !== null)
+    .map((v) => v.displayName ?? v.versionPath ?? v.versionId);
+}
+
+async function performResync(version: VersionType) {
   const { taskId } = await $dropFetch(
     "/api/v1/admin/game/:id/versions/resync",
     {
       method: "POST",
       params: { id: game.value.id },
-      body: { versionId: version.versionId, force },
+      body: { versionId: version.versionId },
     },
   );
   router.push(`/admin/task/${taskId}`);
 }
 
 function resyncVersion(version: VersionType) {
+  const related = relatedVersionNames(version);
+  const name = version.displayName ?? version.versionPath ?? "";
   createModal(
     ModalType.Confirmation,
     {
       title: t("library.admin.version.resync.confirmTitle"),
-      description: t("library.admin.version.resync.confirmDesc", [
-        version.displayName ?? version.versionPath ?? "",
-      ]),
+      description:
+        related.length > 0
+          ? t("library.admin.version.resync.confirmDescRelated", [
+              name,
+              related.join(", "),
+            ])
+          : t("library.admin.version.resync.confirmDesc", [name]),
       buttonText: t("library.admin.version.resync.action"),
     },
     async (event, close) => {
       if (event !== "confirm") return close();
       close();
       try {
-        await performResync(version, false);
+        await performResync(version);
       } catch (e) {
-        if ((e as H3Error)?.statusCode === 409) {
-          createModal(
-            ModalType.Confirmation,
-            {
-              title: t("library.admin.version.resync.forceTitle"),
-              description: (e as H3Error)?.statusMessage ?? t("errors.unknown"),
-              buttonText: t("library.admin.version.resync.forceAction"),
-            },
-            async (event2, close2) => {
-              if (event2 !== "confirm") return close2();
-              close2();
-              try {
-                await performResync(version, true);
-              } catch (e2) {
-                showResyncError(e2);
-              }
-            },
-          );
-        } else {
-          showResyncError(e);
-        }
+        showResyncError(e);
       }
     },
   );
@@ -517,7 +556,11 @@ function openReplaceModal(version: VersionType) {
   showReplaceModal.value = true;
 }
 
-async function performReplace(force: boolean) {
+const replaceRelatedNames = computed(() =>
+  replacingVersion.value ? relatedVersionNames(replacingVersion.value) : [],
+);
+
+async function performReplace() {
   if (!replacingVersion.value || !selectedUnimportedVersionId.value) return;
   replaceLoading.value = true;
   replaceError.value = undefined;
@@ -530,30 +573,13 @@ async function performReplace(force: boolean) {
         body: {
           versionId: replacingVersion.value.versionId,
           unimportedVersionId: selectedUnimportedVersionId.value,
-          force,
         },
       },
     );
     showReplaceModal.value = false;
     router.push(`/admin/task/${taskId}`);
   } catch (e) {
-    if ((e as H3Error)?.statusCode === 409 && !force) {
-      createModal(
-        ModalType.Confirmation,
-        {
-          title: t("library.admin.version.resync.forceTitle"),
-          description: (e as H3Error)?.statusMessage ?? t("errors.unknown"),
-          buttonText: t("library.admin.version.resync.forceAction"),
-        },
-        async (event, close) => {
-          if (event !== "confirm") return close();
-          close();
-          await performReplace(true);
-        },
-      );
-    } else {
-      replaceError.value = (e as H3Error)?.statusMessage ?? t("errors.unknown");
-    }
+    replaceError.value = (e as H3Error)?.statusMessage ?? t("errors.unknown");
   } finally {
     replaceLoading.value = false;
   }

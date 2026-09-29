@@ -294,6 +294,22 @@
         </Switch>
       </SwitchGroup>
 
+      <div
+        v-if="versionSettings.delta && currentlySelectedVersion != -1"
+        class="bg-zinc-800 p-4 rounded-xl"
+      >
+        <GameEditorUpdateBase
+          v-model="versionSettings.baseVersionId"
+          :game-id="gameId"
+          :versions="existingVersions"
+          :target="{
+            type: versions[currentlySelectedVersion].type,
+            identifier: versions[currentlySelectedVersion].identifier,
+          }"
+          :target-name="versions[currentlySelectedVersion].name"
+        />
+      </div>
+
       <LoadingButton
         class="w-fit ml-auto"
         :loading="importLoading"
@@ -379,6 +395,10 @@ const gameId = route.params.id.toString();
 const { versions, type } = await $dropFetch(
   `/api/v1/admin/import/version?id=${encodeURIComponent(gameId)}`,
 );
+// Existing versions an update-mode import can be installed on top of.
+const existingVersions = await $dropFetch("/api/v1/admin/game/:id/versions", {
+  params: { id: gameId },
+});
 const currentlySelectedVersion = ref(-1);
 const versionSettings = ref<Omit<typeof ImportVersion.infer, "version" | "id">>(
   {
@@ -423,6 +443,9 @@ async function startImport() {
       method: "POST",
       body: {
         ...versionSettings.value,
+        baseVersionId: versionSettings.value.delta
+          ? versionSettings.value.baseVersionId
+          : undefined,
         id: gameId,
         version: versions[currentlySelectedVersion.value],
       },

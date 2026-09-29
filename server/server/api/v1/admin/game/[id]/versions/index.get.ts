@@ -13,10 +13,14 @@ export default defineEventHandler(async (h3) => {
     },
     select: {
       versions: {
+        orderBy: { versionIndex: "desc" },
         select: {
           versionId: true,
           displayName: true,
           versionPath: true,
+          versionIndex: true,
+          delta: true,
+          baseVersionId: true,
           launches: {
             select: {
               launchId: true,

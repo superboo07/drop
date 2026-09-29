@@ -20,7 +20,12 @@ import gameSizeManager from "~/server/internal/gamesize";
 import type { ImportVersion } from "~/server/api/v1/admin/import/version/index.post";
 import { GameType, type Platform } from "~/prisma/client/enums";
 import { castManifest } from "./manifest/utils";
-import { fetchDeltaDependents, invalidateManifestCache } from "./manifest";
+import {
+  fetchDeltaDependents,
+  fetchUpdateFamily,
+  invalidateManifestCache,
+  resolveBaseChain,
+} from "./manifest";
 import TORRENTIAL_SERVICE from "~/server/internal/services/torrential";
 import { Shescape } from "shescape";
 import type { Prisma } from "~/prisma/client/client";
@@ -78,15 +83,16 @@ export function buildSetupCreateData(setups: VersionSetupInput[]) {
 
 /**
  * Guard rails shared between creating a new version and editing an existing
- * one's config: a delta version needs a non-delta base per platform, and
- * setup-only versions need setups while normal ones need launches.
- * `excludeVersionId` lets an edit check against every *other* version so the
- * one being edited doesn't count as its own base.
+ * one's config: a delta version needs a base version of the same game whose
+ * chain reaches a full version, and setup-only versions need setups while
+ * normal ones need launches. `excludeVersionId` is the version being edited,
+ * which can't be its own base or build on anything built on top of it.
  */
 export async function validateVersionMetadata(
   gameId: string,
   metadata: {
     delta: boolean;
+    baseVersionId?: string | null;
     onlySetup: boolean;
     launches: { platform: Platform }[];
     setups: { platform: Platform }[];
@@ -94,27 +100,45 @@ export async function validateVersionMetadata(
   excludeVersionId?: string,
 ) {
   if (metadata.delta) {
-    for (const platformObject of [
-      ...metadata.launches,
-      ...metadata.setups,
-    ].filter((v, i, a) => a.findIndex((k) => k.platform === v.platform) == i)) {
-      const validOverlayVersions = await prisma.gameVersion.count({
-        where: {
-          gameId,
-          delta: false,
-          ...(excludeVersionId ? { versionId: { not: excludeVersionId } } : {}),
-          OR: [
-            { launches: { some: { platform: platformObject.platform } } },
-            { setups: { some: { platform: platformObject.platform } } },
-          ],
-        },
+    if (!metadata.baseVersionId)
+      throw createError({
+        statusCode: 400,
+        message: "Update mode requires a base version to apply on top of.",
       });
-      if (validOverlayVersions == 0)
+    if (metadata.baseVersionId === excludeVersionId)
+      throw createError({
+        statusCode: 400,
+        message: "A version can't be its own base version.",
+      });
+
+    const base = await prisma.gameVersion.findFirst({
+      where: { versionId: metadata.baseVersionId, gameId },
+      select: { versionId: true, delta: true, baseVersionId: true },
+    });
+    if (!base)
+      throw createError({
+        statusCode: 400,
+        message: "The selected base version doesn't exist for this game.",
+      });
+
+    if (excludeVersionId) {
+      const dependents = await fetchDeltaDependents(gameId, excludeVersionId);
+      if (dependents.some((v) => v.versionId === base.versionId))
         throw createError({
           statusCode: 400,
-          message: `Update mode requires a pre-existing version for platform: ${platformObject.platform}`,
+          message:
+            "The selected base version builds on this version, which would make a loop.",
         });
     }
+
+    // Throws if the base's own chain is broken (missing base, loop).
+    if (base.delta)
+      await resolveBaseChain(base.baseVersionId, base.versionId).catch((e) => {
+        throw createError({
+          statusCode: 400,
+          message: `The selected base version can't be resolved: ${e?.message ?? e}`,
+        });
+      });
   }
 
   if (metadata.onlySetup) {
@@ -345,6 +369,35 @@ class LibraryManager {
   }
 
   /**
+   * Lists the files of a version that hasn't been imported yet - read from
+   * disk for a local version, from the staged upload for a depot one.
+   */
+  async fetchUnimportedVersionFiles(
+    gameId: string,
+    versionIdentifier: Omit<UnimportedVersionInformation, "name">,
+  ): Promise<string[] | undefined> {
+    if (versionIdentifier.type === "depot") {
+      const unimported = await prisma.unimportedGameVersion.findFirst({
+        where: { id: versionIdentifier.identifier, gameId },
+        select: { fileList: true },
+      });
+      return unimported?.fileList;
+    }
+
+    const game = await prisma.game.findUnique({
+      where: { id: gameId },
+      select: { libraryPath: true, libraryId: true },
+    });
+    if (!game || !game.libraryId) return undefined;
+    const library = this.libraries.get(game.libraryId);
+    if (!library) return undefined;
+    return await library.versionReaddir(
+      game.libraryPath,
+      versionIdentifier.identifier,
+    );
+  }
+
+  /**
    * Fetches recommendations and extra data about the version. Doesn't actually check if it's been imported.
    * @param gameId
    * @param versionIdentifier
@@ -414,26 +467,11 @@ class LibraryManager {
 
     const options: Array<VersionGuess> = [];
 
-    let files;
-    if (versionIdentifier.type === "local") {
-      files = await library.versionReaddir(
-        game.libraryPath,
-        versionIdentifier.identifier,
-      );
-    } else if (versionIdentifier.type === "depot") {
-      const unimported = await prisma.unimportedGameVersion.findUnique({
-        where: {
-          id: versionIdentifier.identifier,
-        },
-        select: {
-          fileList: true,
-        },
-      });
-      if (!unimported) return undefined;
-      files = unimported.fileList;
-    } else {
-      return undefined;
-    }
+    const files = await this.fetchUnimportedVersionFiles(
+      gameId,
+      versionIdentifier,
+    );
+    if (!files) return undefined;
 
     for (const filename of files) {
       const basename = path.basename(filename);
@@ -595,6 +633,9 @@ class LibraryManager {
               fileList,
               versionIndex: currentIndex,
               delta: metadata.delta,
+              baseVersion: metadata.delta
+                ? { connect: { versionId: metadata.baseVersionId! } }
+                : undefined,
 
               onlySetup: metadata.onlySetup,
               setups: {
@@ -650,11 +691,15 @@ class LibraryManager {
    * and regenerates its manifest/fileList in place, instead of requiring a
    * delete-and-reimport (which mints a new versionId and breaks any delta
    * chain built on top of the old one).
+   *
+   * Update-mode versions only make sense against the files they're applied
+   * on top of, so this resyncs the version's whole update family with it:
+   * its base chain down to the full version, and every update built on that
+   * full version.
    */
   async resyncLocalVersion(
     gameId: string,
     versionId: string,
-    force = false,
     parentTask?: TaskRunContext,
   ) {
     const existing = await prisma.gameVersion.findFirst({
@@ -670,12 +715,7 @@ class LibraryManager {
       });
     const versionPath = existing.versionPath;
 
-    const dependents = await fetchDeltaDependents(gameId, versionId);
-    if (dependents.length > 0 && !force)
-      throw createError({
-        statusCode: 409,
-        message: `${dependents.length} delta version(s) depend on this version's files: ${dependents.map((v) => v.displayName ?? v.versionId).join(", ")}. Resyncing will invalidate their cached manifests but does not regenerate their own stored delta fileLists against the new base - already-downloaded clients on those versions may get corrupted patches. Pass force=true to proceed anyway.`,
-      });
+    const family = await fetchUpdateFamily(gameId, versionId);
 
     const game = await prisma.game.findUnique({
       where: { id: gameId },
@@ -687,79 +727,34 @@ class LibraryManager {
     if (!library) return undefined;
 
     const taskKey = createVersionResyncTaskKey(gameId, versionId);
+    const others = family.length - 1;
 
     return await taskHandler.create(
       {
         key: taskKey,
         taskGroup: "import:version",
-        name: `Resyncing version ${versionPath} for ${game.mName}`,
+        name: `Resyncing version ${versionPath}${others > 0 ? ` and ${others} related version(s)` : ""} for ${game.mName}`,
         acls: ["system:import:version:read"],
-        async run({ progress, logger }) {
-          const previousFileList = (
-            await prisma.gameVersion.findUniqueOrThrow({
-              where: { versionId },
-              select: { fileList: true },
-            })
-          ).fileList;
-
-          const manifest = await library.generateDropletManifest(
+        run: async ({ progress, logger }) => {
+          await this.rescanLocalVersions(
+            gameId,
+            library,
             game.libraryPath,
-            versionPath,
-            (value) => {
-              progress(value * 0.9);
-            },
-            (value) => {
-              logger.info(value);
-            },
+            family,
+            { progress, logger },
+            0,
+            95,
           );
-          const fileList = await library.versionReaddir(
-            game.libraryPath,
-            versionPath,
-          );
-          logger.info("Resynced manifest successfully!");
-
-          // Files that were previously part of this version but are gone
-          // from disk now need to be recorded as removed, same as a delta
-          // version tracks files it removes from its base.
-          const negativeFileList = previousFileList.filter(
-            (f) => !fileList.includes(f),
-          );
-
-          const updated = await prisma.gameVersion.updateMany({
-            where: { versionId },
-            data: { dropletManifest: manifest, fileList, negativeFileList },
-          });
-          if (updated.count === 0)
-            throw `Version ${versionId} disappeared during resync.`;
-          logger.info("Successfully updated version!");
 
           notificationSystem.systemPush({
             nonce: `version-resync-${gameId}-${versionId}`,
             title: `'${game.mName}' ('${versionPath}') finished resyncing.`,
-            description: `Drop finished resyncing version ${versionPath} for ${game.mName}.`,
+            description: `Drop finished resyncing version ${versionPath}${others > 0 ? ` and ${others} related version(s)` : ""} for ${game.mName}.`,
             actions: [`View|/admin/library/${gameId}`],
             acls: ["system:import:version:read"],
           });
 
-          for (const target of [
-            versionId,
-            ...dependents.map((d) => d.versionId),
-          ]) {
-            await invalidateManifestCache(target);
-            await gameSizeManager.invalidateVersion(target);
-          }
-          await gameSizeManager.invalidateGame(gameId);
-          // This version's chunk ids just changed, so the depot's cached
-          // manifest for it is stale and would 404 every chunk the new
-          // manifest lists.
-          await TORRENTIAL_SERVICE.invalidateDownloadContext(gameId, versionId);
-
-          try {
-            await gameSizeManager.getVersionSize(versionId);
-          } catch (e) {
-            logger.warn(`Failed to pre-cache game size and manifest: ${e}`);
-          }
-
+          await this.invalidateFamilyCaches(gameId, family, logger);
           progress(100);
         },
       },
@@ -770,13 +765,14 @@ class LibraryManager {
   /**
    * Commits a staged depot upload (UnimportedGameVersion) onto an existing
    * "depot" (chunk-uploaded) version's files, replacing its manifest/fileList
-   * in place rather than minting a new versionId.
+   * in place rather than minting a new versionId. The local versions in its
+   * update family are resynced from disk along with it, same as
+   * resyncLocalVersion.
    */
   async commitDepotReplacement(
     gameId: string,
     versionId: string,
     unimportedVersionId: string,
-    force = false,
     parentTask?: TaskRunContext,
   ) {
     const existing = await prisma.gameVersion.findFirst({
@@ -800,18 +796,16 @@ class LibraryManager {
         message: "Could not find a staged upload with that ID for this game.",
       });
 
-    const dependents = await fetchDeltaDependents(gameId, versionId);
-    if (dependents.length > 0 && !force)
-      throw createError({
-        statusCode: 409,
-        message: `${dependents.length} delta version(s) depend on this version's files: ${dependents.map((v) => v.displayName ?? v.versionId).join(", ")}. Replacing will invalidate their cached manifests but does not regenerate their own stored delta fileLists against the new base - already-downloaded clients on those versions may get corrupted patches. Pass force=true to proceed anyway.`,
-      });
+    const family = await fetchUpdateFamily(gameId, versionId);
 
     const game = await prisma.game.findUnique({
       where: { id: gameId },
-      select: { mName: true },
+      select: { mName: true, libraryId: true, libraryPath: true },
     });
     if (!game) return undefined;
+    const library = game.libraryId
+      ? this.libraries.get(game.libraryId)
+      : undefined;
 
     const taskKey = createVersionResyncTaskKey(gameId, versionId);
 
@@ -821,10 +815,9 @@ class LibraryManager {
         taskGroup: "import:version",
         name: `Replacing files for version ${unimportedVersion.versionName} on ${game.mName}`,
         acls: ["system:import:version:read"],
-        async run({ progress, logger }) {
+        run: async ({ progress, logger }) => {
           const manifest = castManifest(unimportedVersion.manifest);
           const fileList = unimportedVersion.fileList;
-          progress(50);
 
           const updated = await prisma.gameVersion.updateMany({
             where: { versionId },
@@ -833,6 +826,26 @@ class LibraryManager {
           if (updated.count === 0)
             throw `Version ${versionId} disappeared during replacement.`;
           logger.info("Successfully replaced version files!");
+          // This version's chunk ids just changed, so the depot's cached
+          // manifest for it is stale and would 404 every chunk the new
+          // manifest lists.
+          await TORRENTIAL_SERVICE.invalidateDownloadContext(gameId, versionId);
+          progress(20);
+
+          const related = family.filter((v) => v.versionId !== versionId);
+          if (related.some((v) => v.versionPath !== null)) {
+            if (!library)
+              throw "The game's library is unavailable, so the related local versions couldn't be resynced.";
+            await this.rescanLocalVersions(
+              gameId,
+              library,
+              game.libraryPath,
+              related,
+              { progress, logger },
+              20,
+              95,
+            );
+          }
 
           notificationSystem.systemPush({
             nonce: `version-depot-replace-${gameId}-${versionId}`,
@@ -842,24 +855,7 @@ class LibraryManager {
             acls: ["system:import:version:read"],
           });
 
-          for (const target of [
-            versionId,
-            ...dependents.map((d) => d.versionId),
-          ]) {
-            await invalidateManifestCache(target);
-            await gameSizeManager.invalidateVersion(target);
-          }
-          await gameSizeManager.invalidateGame(gameId);
-          // This version's chunk ids just changed, so the depot's cached
-          // manifest for it is stale and would 404 every chunk the new
-          // manifest lists.
-          await TORRENTIAL_SERVICE.invalidateDownloadContext(gameId, versionId);
-
-          try {
-            await gameSizeManager.getVersionSize(versionId);
-          } catch (e) {
-            logger.warn(`Failed to pre-cache game size and manifest: ${e}`);
-          }
+          await this.invalidateFamilyCaches(gameId, family, logger);
 
           // eslint-disable-next-line drop/no-prisma-delete
           await prisma.unimportedGameVersion.delete({
@@ -871,6 +867,106 @@ class LibraryManager {
       },
       parentTask,
     );
+  }
+
+  /**
+   * Rescans each local version in `versions` from disk, in order, spreading
+   * progress over [from, to]. Depot-imported versions have nothing on disk
+   * to rescan and their stored files haven't changed, so they're skipped.
+   */
+  private async rescanLocalVersions(
+    gameId: string,
+    library: LibraryProvider<unknown>,
+    libraryPath: string,
+    versions: { versionId: string; versionPath: string | null }[],
+    { progress, logger }: Pick<TaskRunContext, "progress" | "logger">,
+    from: number,
+    to: number,
+  ) {
+    const local = versions.filter((v) => v.versionPath !== null);
+    for (const version of versions) {
+      if (version.versionPath === null)
+        logger.info(
+          `Skipping depot-imported version ${version.versionId}: it has no files on disk to rescan.`,
+        );
+    }
+
+    const step = (to - from) / Math.max(local.length, 1);
+    for (const [i, version] of local.entries()) {
+      const versionPath = version.versionPath!;
+      const start = from + step * i;
+      logger.info(`Rescanning ${versionPath}...`);
+
+      const previous = await prisma.gameVersion.findUniqueOrThrow({
+        where: { versionId: version.versionId },
+        select: { fileList: true, negativeFileList: true },
+      });
+
+      const manifest = await library.generateDropletManifest(
+        libraryPath,
+        versionPath,
+        (value) => {
+          progress(start + (value / 100) * step);
+        },
+        (value) => {
+          logger.info(value);
+        },
+      );
+      const fileList = await library.versionReaddir(libraryPath, versionPath);
+
+      // Files that were previously part of this version but are gone from
+      // disk now are recorded as removed, same as a delta version tracks
+      // files it removes from its base. Earlier removals are kept (unless
+      // the file came back), so rescanning an unchanged version is a no-op.
+      const present = new Set(fileList);
+      const negativeFileList = [
+        ...new Set([
+          ...previous.negativeFileList,
+          ...previous.fileList.filter((f) => !present.has(f)),
+        ]),
+      ].filter((f) => !present.has(f));
+
+      const updated = await prisma.gameVersion.updateMany({
+        where: { versionId: version.versionId },
+        data: { dropletManifest: manifest, fileList, negativeFileList },
+      });
+      if (updated.count === 0)
+        throw `Version ${version.versionId} disappeared during resync.`;
+      logger.info(`Resynced ${versionPath}.`);
+
+      // This version's chunk ids just changed, so the depot's cached
+      // manifest for it is stale and would 404 every chunk the new manifest
+      // lists.
+      await TORRENTIAL_SERVICE.invalidateDownloadContext(
+        gameId,
+        version.versionId,
+      );
+    }
+    progress(to);
+  }
+
+  /**
+   * After any version in an update family changes files, every member's
+   * resolved manifest and size may have changed with it.
+   */
+  private async invalidateFamilyCaches(
+    gameId: string,
+    family: { versionId: string }[],
+    logger: TaskRunContext["logger"],
+  ) {
+    for (const version of family) {
+      await invalidateManifestCache(version.versionId);
+      await gameSizeManager.invalidateVersion(version.versionId);
+    }
+    await gameSizeManager.invalidateGame(gameId);
+
+    for (const version of family) {
+      try {
+        await gameSizeManager.getVersionSize(version.versionId);
+      } catch (e) {
+        logger.warn(`Failed to pre-cache game size and manifest: ${e}`);
+      }
+    }
   }
 
   async peekFile(
@@ -885,6 +981,18 @@ class LibraryManager {
   }
 
   async deleteGameVersion(gameId: string, version: string) {
+    // The FK would just null their base out, leaving update-mode versions
+    // with nothing to apply on top of.
+    const dependents = await prisma.gameVersion.findMany({
+      where: { gameId, baseVersionId: version },
+      select: { versionId: true, displayName: true, versionPath: true },
+    });
+    if (dependents.length > 0)
+      throw createError({
+        statusCode: 409,
+        message: `${dependents.length} update-mode version(s) are applied on top of this version: ${dependents.map((v) => v.displayName ?? v.versionPath ?? v.versionId).join(", ")}. Change their base version or delete them first.`,
+      });
+
     await prisma.gameVersion.deleteMany({
       where: {
         gameId: gameId,

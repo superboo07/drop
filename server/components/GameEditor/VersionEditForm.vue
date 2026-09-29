@@ -150,7 +150,7 @@
                     </span>
                     <button
                       class="ml-1 transition rounded p-1 bg-zinc-900/30 group hover:bg-red-600/30"
-                      @click.prevent="() => form.launches.splice(launchIdx, 1)"
+                      @click.prevent="() => removeLaunch(launchIdx)"
                     >
                       <TrashIcon
                         class="transition size-5 text-zinc-700 group-hover:text-red-700"
@@ -161,6 +161,7 @@
                 <DisclosurePanel as="dd" class="mt-2">
                   <ImportVersionLaunchRow
                     v-model="form.launches[launchIdx]"
+                    v-model:emulator="form.emulators[launchIdx]"
                     :version-guesses="undefined"
                     :needs-name="true"
                     :allow-emulator="true"
@@ -178,7 +179,7 @@
           <LoadingButton
             :loading="false"
             class="w-fit"
-            @click="() => form.launches.push({} as unknown as FormLaunch)"
+            @click="() => addLaunch()"
             >{{ $t("common.add") }}</LoadingButton
           >
 
@@ -266,6 +267,7 @@ import type { H3Error } from "h3";
 import type { SerializeObject } from "nitropack";
 import { GameType } from "~/prisma/client/enums";
 import type { ImportVersion } from "~/server/api/v1/admin/import/version/index.post";
+import type { EmulatorLaunchObject } from "~/composables/frontend";
 import type { AdminFetchGameType } from "~/server/api/v1/admin/game/[id]/index.get";
 
 const open = defineModel<boolean>({ required: true });
@@ -288,6 +290,8 @@ interface VersionForm {
   delta: boolean;
   onlySetup: boolean;
   launches: FormLaunch[];
+  // Parallel to launches: display info for each launch's emulator
+  emulators: (EmulatorLaunchObject | undefined)[];
   setups: FormSetup[];
 }
 
@@ -303,6 +307,21 @@ function buildForm(): VersionForm {
       emulatorId: l.emulatorId ?? undefined,
       suggestions: l.emulatorSuggestions,
     })),
+    emulators: props.version.launches.map((l) =>
+      l.emulator
+        ? {
+            launchId: l.emulator.launchId,
+            gameName: l.emulator.gameVersion.game.mName,
+            gameIcon: l.emulator.gameVersion.game.mIconObjectId,
+            versionName:
+              l.emulator.gameVersion.displayName ??
+              l.emulator.gameVersion.versionPath ??
+              "",
+            launchName: l.emulator.name,
+            platform: l.emulator.platform,
+          }
+        : undefined,
+    ),
     setups: props.version.setups.map((s) => ({
       launch: s.command,
       platform: s.platform,
@@ -311,6 +330,16 @@ function buildForm(): VersionForm {
 }
 
 const form = ref<VersionForm>(buildForm());
+
+function addLaunch() {
+  form.value.launches.push({} as unknown as FormLaunch);
+  form.value.emulators.push(undefined);
+}
+
+function removeLaunch(idx: number) {
+  form.value.launches.splice(idx, 1);
+  form.value.emulators.splice(idx, 1);
+}
 
 watch(open, (isOpen) => {
   if (isOpen) form.value = buildForm();

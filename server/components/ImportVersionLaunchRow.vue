@@ -33,7 +33,7 @@
         </span>
         <Combobox
           as="div"
-          :value="launchConfiguration.launch"
+          :model-value="launchConfiguration.launch"
           nullable
           class="w-full"
           @update:model-value="(v) => updateLaunchCommand(v)"
@@ -247,13 +247,17 @@ const launchConfiguration = defineModel<
     name?: string;
   }
 >({ required: true });
-const _emulatorMetadata = ref<EmulatorLaunchObject | undefined>(undefined);
+// Display info for the selected emulator. Callers editing an existing launch
+// bind it, since only emulatorId is stored on the launch itself.
+const emulatorMetadata = defineModel<EmulatorLaunchObject | undefined>(
+  "emulator",
+);
 const emulator = computed({
   get() {
-    return _emulatorMetadata.value;
+    return emulatorMetadata.value;
   },
   set(v) {
-    _emulatorMetadata.value = v;
+    emulatorMetadata.value = v;
     if (v) {
       launchConfiguration.value.emulatorId = v.launchId;
     } else {
@@ -290,8 +294,9 @@ const launchFilteredVersionGuesses = computed(() =>
   ),
 );
 
-function updateLaunchCommand(command: string) {
-  launchConfiguration.value.launch = command;
+function updateLaunchCommand(command: string | null) {
+  launchConfiguration.value.launch = command ?? "";
+  if (!command) return;
 
   // Auto-fill name from filename if user hasn't set one (#373)
   if (!launchConfiguration.value.name) {

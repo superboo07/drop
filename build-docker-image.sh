@@ -3,7 +3,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-IMAGE_TAG="drop:custom"
+# Fully qualified: podman (which `docker` is in the dev container) otherwise
+# stores an unqualified name as localhost/drop:custom, and `docker save` writes
+# that into the archive. Docker loads docker.io/library/drop:custom as plain
+# drop:custom.
+IMAGE_TAG="docker.io/library/drop:custom"
 OUTPUT_FILE="drop-custom.tar.gz"
 
 BUILD_DROP_VERSION="$(git describe --tags --always)"
@@ -16,4 +20,4 @@ docker build -t "$IMAGE_TAG" \
 
 docker save "$IMAGE_TAG" | gzip > "$OUTPUT_FILE"
 
-echo "Built $IMAGE_TAG and saved it to $(pwd)/$OUTPUT_FILE"
+echo "Built drop:custom and saved it to $(pwd)/$OUTPUT_FILE"

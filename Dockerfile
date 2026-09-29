@@ -94,14 +94,24 @@ ENV NUXT_TELEMETRY_DISABLED=1
 ##  - nginx: front-end proxy
 ##  - openssl + ca-certificates: required by Prisma's query engine on Debian
 ## pnpm itself is provided by corepack (enabled in the base stage)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+## upgrade picks up Debian security fixes (e.g. tzdata) newer than the base image.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     libarchive13 \
     p7zip-full \
     nginx \
     openssl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-RUN pnpm install prisma@7.7.0 --global
+## The node image's npm is never used here (pnpm comes from corepack) and
+## carries its own vulnerable copies of tar, undici etc.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+## The Prisma CLI for migrations, from a manifest rather than a bare global
+## install so its overrides can patch the dependencies prisma pins. --dir
+## keeps the cwd at /app, where corepack reads the pnpm version.
+COPY server/build/prisma-cli/package.json /opt/prisma-cli/
+RUN pnpm install --dir /opt/prisma-cli
+ENV PATH="/opt/prisma-cli/node_modules/.bin:$PATH"
 # init prisma to download all required files
 RUN pnpm prisma init
 

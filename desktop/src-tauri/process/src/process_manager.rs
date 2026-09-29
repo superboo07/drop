@@ -613,6 +613,9 @@ impl ProcessManager<'_> {
             exe_command.args.iter_mut().for_each(|v| {
                 *v = v.replace("{rom}", &target_command.command);
             });
+            // The game's launch option can carry its own args for the
+            // emulator on top of the ROM path.
+            exe_command.args.extend(target_command.args.iter().cloned());
 
             let game_executable_path = PathBuf::from(&exe_command.command);
 

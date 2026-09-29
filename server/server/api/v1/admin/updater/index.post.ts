@@ -23,12 +23,14 @@ export default defineEventHandler(async (h3) => {
 
   const body = await readDropValidatedBody(h3, CreateRelease);
   const session = await sessionHandler.getSession(h3);
+  const token = await aclManager.getAPIToken(h3);
 
   const release = await clientReleaseManager.create({
     ...body,
     branch: branchFromSlug(body.branch)!,
     tag: body.tag.trim(),
     uploaderId: session?.authenticated?.userId,
+    uploaderToken: token?.name,
   });
 
   return serializeRelease(release);

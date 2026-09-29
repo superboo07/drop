@@ -62,8 +62,11 @@ model ClientRelease {
   publishedAt DateTime? // null while a draft
   withdrawnAt DateTime?
 
-  uploaderId String?
-  uploader   User?   @relation(fields: [uploaderId], references: [id], onDelete: SetNull)
+  uploaderId    String?
+  uploader      User?   @relation(fields: [uploaderId], references: [id], onDelete: SetNull)
+  // Name of the API token used, when a token uploaded it instead of a user.
+  // Copied rather than related so it outlives the token.
+  uploaderToken String?
 
   @@index([target, arch])
   @@index([sha256])

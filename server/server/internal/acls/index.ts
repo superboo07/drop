@@ -193,6 +193,23 @@ class ACLManager {
     return session.authenticated.userId;
   }
 
+  /**
+   * The API token the request authenticated with, if it didn't use a session
+   */
+  async getAPIToken(request: MinimumRequestObject | undefined) {
+    if (!request)
+      throw new Error("Native web requests not available - weird deployment?");
+    const session = await sessionHandler.getSession(request);
+    if (session?.authenticated) return undefined;
+    const authorizationToken = this.getAuthorizationToken(request);
+    if (!authorizationToken) return undefined;
+    return (
+      (await prisma.aPIToken.findUnique({
+        where: { token: authorizationToken },
+      })) ?? undefined
+    );
+  }
+
   async allowSystemACL(
     request: MinimumRequestObject | undefined,
     acls: SystemACL,

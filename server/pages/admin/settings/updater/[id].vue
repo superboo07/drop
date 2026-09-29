@@ -279,7 +279,11 @@ const facts = computed(() => [
     : []),
   {
     label: "Uploaded by",
-    value: release.value.uploader?.displayName ?? "Unknown",
+    value:
+      release.value.uploader?.displayName ??
+      (release.value.uploaderToken
+        ? `API token "${release.value.uploaderToken}"`
+        : "Unknown"),
   },
   { label: "File", value: release.value.fileName, mono: true },
   { label: "Size", value: formatReleaseSize(release.value.size) },

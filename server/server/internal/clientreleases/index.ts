@@ -235,6 +235,7 @@ class ClientReleaseManager {
     required: boolean;
     publish: boolean;
     uploaderId?: string;
+    uploaderToken?: string;
   }) {
     const uploadPath = this.uploadPath(options.uploadId);
     let upload: PendingUpload;
@@ -269,6 +270,7 @@ class ClientReleaseManager {
         sha256: upload.sha256,
         publishedAt: options.publish ? new Date() : null,
         uploaderId: options.uploaderId,
+        uploaderToken: options.uploaderToken,
       },
     });
 

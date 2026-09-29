@@ -1,4 +1,4 @@
-export type FlatpakApp = { id: string; name: string };
+export type FlatpakApp = { id: string; name: string; branches: string[] };
 
 const apps = ref<FlatpakApp[] | undefined>();
 let loading: Promise<void> | undefined;

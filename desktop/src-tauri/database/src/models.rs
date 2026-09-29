@@ -273,6 +273,10 @@ pub mod data {
             // The local executable to run, or for a Flatpak, its app ID
             // (e.g. `org.libretro.RetroArch`).
             pub path: String,
+            // For a Flatpak, which installed branch to run (e.g. `stable`).
+            // None runs whichever branch Flatpak has marked current.
+            #[serde(default)]
+            pub branch: Option<String>,
             // Arguments passed to it, split shell-style. `{rom}` is replaced
             // with the absolute path of the game's launch target.
             pub args: String,

@@ -11,6 +11,11 @@
         >
         {{ nameOf(model.path) }}
         <span class="font-mono text-zinc-400">{{ model.path }}</span>
+        <span
+          v-if="model.branch"
+          class="ml-2 rounded bg-zinc-500/15 px-1.5 py-0.5 font-mono text-xs text-zinc-300"
+          >{{ model.branch }}</span
+        >
       </span>
       <span
         v-else-if="model"
@@ -67,8 +72,9 @@
         >
           <li v-for="app in filteredApps" :key="app.id">
             <button
+              v-if="app.branches.length <= 1"
               type="button"
-              @click="() => pickFlatpak(app.id)"
+              @click="() => pickFlatpak(app.id, null)"
               class="flex w-full flex-row items-baseline gap-x-2 px-3 py-2 text-left text-sm hover:bg-zinc-800"
             >
               <span class="font-semibold text-zinc-100">{{ app.name }}</span>
@@ -76,6 +82,27 @@
                 app.id
               }}</span>
             </button>
+            <!-- More than one branch installed: pick which one to run. -->
+            <div
+              v-else
+              class="flex w-full flex-row flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-sm"
+            >
+              <span class="font-semibold text-zinc-100">{{ app.name }}</span>
+              <span class="truncate font-mono text-xs text-zinc-400">{{
+                app.id
+              }}</span>
+              <span class="ml-auto flex flex-row gap-x-1">
+                <button
+                  v-for="branch in app.branches"
+                  :key="branch"
+                  type="button"
+                  @click="() => pickFlatpak(app.id, branch)"
+                  class="rounded bg-zinc-800 px-2 py-0.5 font-mono text-xs text-zinc-100 ring-1 ring-inset ring-zinc-700 hover:bg-zinc-700"
+                >
+                  {{ branch }}
+                </button>
+              </span>
+            </div>
           </li>
           <li
             v-if="filteredApps.length === 0"
@@ -130,8 +157,12 @@ const filteredApps = computed(() => {
   );
 });
 
-function set(kind: LocalEmulator["kind"], path: string) {
-  model.value = { kind, path, args: model.value?.args ?? "{rom}" };
+function set(
+  kind: LocalEmulator["kind"],
+  path: string,
+  branch: string | null = null,
+) {
+  model.value = { kind, path, branch, args: model.value?.args ?? "{rom}" };
 }
 
 async function pickExecutable() {
@@ -146,9 +177,9 @@ function toggleFlatpakPicker() {
   if (pickerOpen.value) load();
 }
 
-function pickFlatpak(appId: string) {
+function pickFlatpak(appId: string, branch: string | null) {
   pickerOpen.value = false;
-  set("flatpak", appId);
+  set("flatpak", appId, branch);
 }
 
 function setArgs(event: Event) {

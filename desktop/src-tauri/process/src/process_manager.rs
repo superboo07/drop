@@ -615,11 +615,13 @@ impl ProcessManager<'_> {
                 EmulatorOverrideKind::Flatpak => {
                     let flatpak = flatpak::find_flatpak()
                         .ok_or_else(|| ProcessError::FlatpakMissing(emulator_name.clone()))?;
-                    if !flatpak::is_installed(&flatpak, &local_emulator.path) {
-                        return Err(ProcessError::EmulatorOverrideMissing(
-                            emulator_name,
-                            local_emulator.path,
-                        ));
+                    let branch = local_emulator.branch.as_deref();
+                    if !flatpak::is_installed(&local_emulator.path, branch) {
+                        let path = match branch {
+                            Some(branch) => format!("{} ({branch})", local_emulator.path),
+                            None => local_emulator.path,
+                        };
+                        return Err(ProcessError::EmulatorOverrideMissing(emulator_name, path));
                     }
                     // The sandbox can't see the game's files unless we let
                     // it; read-write, since plenty of emulators keep saves
@@ -627,8 +629,12 @@ impl ProcessManager<'_> {
                     let mut flatpak_args = vec![
                         "run".to_owned(),
                         format!("--filesystem={install_dir}"),
-                        local_emulator.path.clone(),
                     ];
+                    // Without one, flatpak runs whichever branch is current.
+                    if let Some(branch) = branch {
+                        flatpak_args.push(format!("--branch={branch}"));
+                    }
+                    flatpak_args.push(local_emulator.path.clone());
                     flatpak_args.extend(args);
                     // Relative paths the emulator resolves should land in
                     // the game's directory, not flatpak's.

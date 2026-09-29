@@ -142,6 +142,8 @@ export type LocalEmulator = {
   kind: "executable" | "flatpak";
   // Executable path, or the Flatpak's app ID
   path: string;
+  // Flatpak branch to run; null runs whichever one Flatpak has as current
+  branch: string | null;
   args: string;
 };
 

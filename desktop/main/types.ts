@@ -199,4 +199,6 @@ export type EmulatorOverride = {
   versions: {
     [emulatorVersionId: string]: LocalEmulator & { versionName: string };
   };
+  // Install directory that games running through this emulator default to
+  installDir: string | null;
 };

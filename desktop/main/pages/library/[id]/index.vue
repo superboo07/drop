@@ -409,6 +409,12 @@
             :install-dirs="installDirs"
             v-model="installDir"
           />
+          <p
+            v-if="emulatorInstallDir && installDir === emulatorInstallDir.index"
+            class="mt-1 text-sm text-zinc-400"
+          >
+            Default for {{ emulatorInstallDir.emulatorName }} games
+          </p>
         </div>
         <div
           v-if="
@@ -683,7 +689,7 @@ import {
 } from "@heroicons/vue/24/solid";
 import { micromark } from "micromark";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { InstalledType } from "~/types";
+import { InstalledType, type EmulatorOverride, type Settings } from "~/types";
 
 const route = useRoute();
 const router = useRouter();
@@ -761,6 +767,8 @@ async function installFlow() {
       { gameId: game.id },
     );
     installDirs.value = await invokeWithTimeout("fetch_download_dir_stats");
+    const settings = await invokeWithTimeout<Settings>("fetch_settings");
+    emulatorOverrides.value = settings.emulatorOverrides;
   } catch (error) {
     installError.value = (error as string).toString();
     versionOptions.value = undefined;
@@ -808,6 +816,27 @@ async function install() {
 
 const currentVersionOption = computed(
   () => versionOptions.value?.[Math.max(installVersionIndex.value, 0)],
+);
+
+// A game that runs through an emulator starts on the install directory set
+// for that emulator in Settings > Emulators, if it's still an install
+// directory. An option's required content is the emulators it runs through.
+const emulatorOverrides = ref<{ [id: string]: EmulatorOverride }>({});
+const emulatorInstallDir = computed(() => {
+  for (const content of currentVersionOption.value?.requiredContent ?? []) {
+    const dir = emulatorOverrides.value[content.gameId]?.installDir;
+    const index = dir ? (installDirs.value?.indexOf(dir) ?? -1) : -1;
+    if (index !== -1) return { index, emulatorName: content.name };
+  }
+  return undefined;
+});
+watch(
+  () => emulatorInstallDir.value?.index,
+  (index, previous) => {
+    if (index !== undefined) installDir.value = index;
+    // Switched to a version without one: undo our pick, not the user's.
+    else if (installDir.value === previous) installDir.value = 0;
+  },
 );
 
 function formatVersionOptionText(index: number) {

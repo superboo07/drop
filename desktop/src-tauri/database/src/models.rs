@@ -281,6 +281,13 @@ pub mod data {
             // `emulator.version_id`).
             #[serde(default)]
             pub versions: HashMap<String, VersionLocalEmulator>,
+            // The install directory that installing a game which runs
+            // through this emulator starts on. Only a starting choice - the
+            // install dialog can still pick another - and it applies whether
+            // or not bring-your-own-emulator mode is on. Ignored if it's no
+            // longer one of `install_dirs`.
+            #[serde(default)]
+            pub install_dir: Option<String>,
         }
 
         impl EmulatorOverride {

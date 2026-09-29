@@ -45,7 +45,8 @@
         v-if="flatpakSupported"
         >, or pick it from your installed Flatpaks</template
       >. If some games need a different version of an emulator, give that
-      version its own copy under <em>Specific versions</em>.
+      version its own copy under <em>Specific versions</em>, and choose where
+      games that run through it are installed.
       <code>{rom}</code> in the arguments is replaced with the game's file, and
       <code>{args}</code> with the arguments from the game's launch option.
       Left out, the game's file is added at the end, followed by its
@@ -64,10 +65,7 @@
       <li
         v-for="emulator in emulators"
         :key="emulator.id"
-        :class="[
-          'rounded-lg bg-zinc-950 p-4 ring-2 ring-zinc-800 transition',
-          byoEmulator ? '' : 'opacity-60',
-        ]"
+        class="rounded-lg bg-zinc-950 p-4 ring-2 ring-zinc-800"
       >
         <div class="flex flex-row items-center gap-x-3">
           <img
@@ -80,17 +78,57 @@
             <h4 class="text-sm font-semibold text-zinc-100">
               {{ emulator.name }}
             </h4>
-            <p
-              v-if="overrides[emulator.id]"
-              class="text-xs font-medium text-green-400"
-            >
-              {{ summary(emulator.id) }}
+            <p class="text-xs font-medium">
+              <span v-if="hasLocalCopy(emulator.id)" class="text-green-400">{{
+                summary(emulator.id)
+              }}</span>
+              <span v-else class="font-normal text-zinc-400"
+                >Using the server's copy</span
+              >
+              <template v-if="overrides[emulator.id]?.installDir">
+                <span class="text-zinc-600"> · </span>
+                <span
+                  v-if="installDirMissing(emulator.id)"
+                  class="text-yellow-400"
+                  >Install folder missing</span
+                >
+                <span v-else class="text-zinc-300"
+                  >games install to
+                  {{ baseName(overrides[emulator.id]!.installDir!) }}</span
+                >
+              </template>
             </p>
-            <p v-else class="text-xs text-zinc-400">Using the server's copy</p>
           </div>
         </div>
 
         <div class="mt-4">
+          <h5
+            class="text-xs font-semibold uppercase tracking-wide text-zinc-400"
+          >
+            Install games to
+          </h5>
+          <p class="mt-1 text-xs text-zinc-500">
+            Where games that run through {{ emulator.name }} are installed by
+            default. You can still change it when you install.
+          </p>
+          <EmulatorInstallDirSelector
+            class="mt-2 max-w-xl"
+            :install-dirs="installDirs"
+            :model-value="overrides[emulator.id]?.installDir ?? null"
+            @update:model-value="(value) => setInstallDir(emulator, value)"
+            @add="() => addInstallDir(emulator)"
+          />
+          <p
+            v-if="installDirMissing(emulator.id)"
+            class="mt-2 text-xs text-yellow-400"
+          >
+            This folder isn't one of your install directories any more, so
+            games start on the first one. Pick another folder, or add it back
+            in Downloads.
+          </p>
+        </div>
+
+        <div :class="['mt-4 transition', byoEmulator ? '' : 'opacity-60']">
           <h5
             class="text-xs font-semibold uppercase tracking-wide text-zinc-400"
           >
@@ -104,7 +142,10 @@
           />
         </div>
 
-        <div v-if="emulator.versions.length > 0" class="mt-4">
+        <div
+          v-if="emulator.versions.length > 0"
+          :class="['mt-4 transition', byoEmulator ? '' : 'opacity-60']"
+        >
           <button
             type="button"
             @click="() => toggleVersions(emulator.id)"
@@ -166,6 +207,7 @@
 import { Switch } from "@headlessui/vue";
 import { CpuChipIcon } from "@heroicons/vue/24/outline";
 import { ChevronRightIcon } from "@heroicons/vue/20/solid";
+import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import type {
   Collection,
@@ -195,6 +237,9 @@ const overrides = ref<{ [id: string]: EmulatorOverride }>({
   ...settings.emulatorOverrides,
 });
 const saveError = ref<string | undefined>();
+const installDirs = ref<string[]>(
+  await invokeWithTimeout<string[]>("fetch_download_dir_stats"),
+);
 
 watch(byoEmulator, async (value) => {
   await invokeWithTimeout("update_settings", {
@@ -218,6 +263,7 @@ function overrideFor(emulator: EmulatorEntry): EmulatorOverride {
     name: emulator.name,
     default: null,
     versions: {},
+    installDir: null,
   };
   return overrides.value[emulator.id]!;
 }
@@ -225,7 +271,12 @@ function overrideFor(emulator: EmulatorEntry): EmulatorOverride {
 // Drop entries with nothing set, so "no override" has one representation.
 function prune(id: string) {
   const entry = overrides.value[id];
-  if (entry && !entry.default && Object.keys(entry.versions).length === 0) {
+  if (
+    entry &&
+    !entry.default &&
+    Object.keys(entry.versions).length === 0 &&
+    !entry.installDir
+  ) {
     delete overrides.value[id];
   }
 }
@@ -255,6 +306,41 @@ async function setVersion(
   }
   prune(emulator.id);
   await save();
+}
+
+async function setInstallDir(emulator: EmulatorEntry, value: string | null) {
+  overrideFor(emulator).installDir = value;
+  prune(emulator.id);
+  await save();
+}
+
+async function addInstallDir(emulator: EmulatorEntry) {
+  saveError.value = undefined;
+  try {
+    const dir = await open({ multiple: false, directory: true });
+    if (!dir) return;
+    await invokeWithTimeout("add_download_dir", { newDir: dir });
+    installDirs.value = await invokeWithTimeout<string[]>(
+      "fetch_download_dir_stats",
+    );
+    await setInstallDir(emulator, dir);
+  } catch (error) {
+    saveError.value = `Couldn't add that directory: ${error}`;
+  }
+}
+
+function installDirMissing(id: string) {
+  const dir = overrides.value[id]?.installDir;
+  return !!dir && !installDirs.value.includes(dir);
+}
+
+function baseName(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function hasLocalCopy(id: string) {
+  const entry = overrides.value[id];
+  return !!entry && (!!entry.default || versionOverrideCount(id) > 0);
 }
 
 function versionValue(

@@ -48,6 +48,7 @@ import {
   RectangleGroupIcon,
   BugAntIcon,
   LanguageIcon,
+  CpuChipIcon,
 } from "@heroicons/vue/16/solid";
 import type { Component } from "vue";
 import type { NavigationItem } from "~/types";
@@ -136,6 +137,12 @@ const navigation = computed(() => [
         },
       ]
     : []),
+  {
+    label: "Emulators",
+    route: "/settings/emulators",
+    prefix: "/settings/emulators",
+    icon: CpuChipIcon,
+  },
   {
     label: "Account",
     route: "/settings/account",

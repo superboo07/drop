@@ -9,6 +9,9 @@ pub mod data {
     pub type Database = v1::Database;
     pub type GameVersion = v1::GameVersion;
     pub type Settings = v1::Settings;
+    pub type EmulatorOverride = v1::EmulatorOverride;
+    pub type EmulatorOverrideKind = v1::EmulatorOverrideKind;
+    pub type LocalEmulator = v1::LocalEmulator;
     pub type DatabaseAuth = v1::DatabaseAuth;
 
     pub type GameDownloadStatus = v1::GameDownloadStatus;
@@ -222,7 +225,74 @@ pub mod data {
             // Port LunaTranslator listens on for the bridge to connect back
             // to. Matches LunaCompanionServer.LISTEN_PORT upstream.
             #[serde(default = "default_luna_port")]
-            pub luna_port: u16, // ... other settings ...
+            pub luna_port: u16,
+            // Bring-your-own-emulator mode: when on, a game whose launch
+            // option runs through a server-provided emulator uses the user's
+            // own local install of that emulator instead (if one is set up
+            // in `emulator_overrides`), rather than needing Drop to download
+            // the emulator from the server first.
+            #[serde(default)]
+            pub byo_emulator: bool,
+            // Keyed by the emulator's game ID on the server - that's what a
+            // launch option's `emulator.game_id` points at.
+            #[serde(default)]
+            pub emulator_overrides: HashMap<String, EmulatorOverride>, // ... other settings ...
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+        #[serde(rename_all = "camelCase")]
+        pub struct EmulatorOverride {
+            // The emulator's name on the server, so the settings page can
+            // still label this entry when the emulator isn't in the library.
+            pub name: String,
+            // Used for every version of the emulator without its own entry
+            // in `versions`. `None` leaves those on the server's copy.
+            #[serde(default)]
+            pub default: Option<LocalEmulator>,
+            // Keyed by the emulator's version ID on the server, for games
+            // that need a specific version of it (a launch option's
+            // `emulator.version_id`).
+            #[serde(default)]
+            pub versions: HashMap<String, VersionLocalEmulator>,
+        }
+
+        impl EmulatorOverride {
+            pub fn for_version(&self, version_id: &str) -> Option<&LocalEmulator> {
+                self.versions
+                    .get(version_id)
+                    .map(|v| &v.emulator)
+                    .or(self.default.as_ref())
+            }
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+        #[serde(rename_all = "camelCase")]
+        pub struct LocalEmulator {
+            #[serde(default)]
+            pub kind: EmulatorOverrideKind,
+            // The local executable to run, or for a Flatpak, its app ID
+            // (e.g. `org.libretro.RetroArch`).
+            pub path: String,
+            // Arguments passed to it, split shell-style. `{rom}` is replaced
+            // with the absolute path of the game's launch target.
+            pub args: String,
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+        #[serde(rename_all = "camelCase")]
+        pub struct VersionLocalEmulator {
+            // The version's name on the server, for labelling it offline.
+            pub version_name: String,
+            #[serde(flatten)]
+            pub emulator: LocalEmulator,
+        }
+
+        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+        #[serde(rename_all = "camelCase")]
+        pub enum EmulatorOverrideKind {
+            #[default]
+            Executable,
+            Flatpak,
         }
         fn default_luna_port() -> u16 {
             52300
@@ -243,6 +313,8 @@ pub mod data {
                     luna_translator_path: None,
                     luna_bridge_path: None,
                     luna_port: default_luna_port(),
+                    byo_emulator: false,
+                    emulator_overrides: HashMap::new(),
                 }
             }
         }

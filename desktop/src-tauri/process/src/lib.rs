@@ -17,6 +17,7 @@ pub static PROCESS_MANAGER: ProcessManagerWrapper = ProcessManagerWrapper::new()
 #[cfg(target_os = "linux")]
 pub mod compat;
 pub mod error;
+pub mod flatpak;
 pub mod format;
 #[cfg(target_os = "linux")]
 pub mod luna;

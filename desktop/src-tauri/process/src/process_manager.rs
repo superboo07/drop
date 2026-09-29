@@ -12,7 +12,7 @@ use std::{
 use database::{
     ApplicationTransientStatus, Database, DownloadableMetadata, GameDownloadStatus, GameVersion,
     PendingPlaytimeSession, borrow_db_checked, borrow_db_mut_checked, db::DATA_ROOT_DIR,
-    models::data::InstalledGameType, platform::Platform,
+    EmulatorOverrideKind, models::data::InstalledGameType, platform::Platform,
 };
 use dynfmt::Format;
 use dynfmt::SimpleCurlyFormat;
@@ -26,6 +26,7 @@ use utils::external_open::sanitize_external_command;
 use crate::{
     PROCESS_MANAGER,
     error::ProcessError,
+    flatpak,
     format::DropFormatArgs,
     parser::{LaunchParameters, ParsedCommand},
     process_handlers::{
@@ -558,10 +559,115 @@ impl ProcessManager<'_> {
 
         let mut target_command = ParsedCommand::parse(target_command)?;
 
+        // Bring-your-own-emulator mode: the user's own local install of
+        // this emulator replaces the one Drop would otherwise need to have
+        // downloaded from the server.
+        let local_emulator = emulator
+            .filter(|_| db_lock.settings.byo_emulator)
+            .and_then(|emulator| {
+                let emulator_override = db_lock.settings.emulator_overrides.get(&emulator.game_id)?;
+                let local = emulator_override.for_version(&emulator.version_id)?;
+                Some((emulator_override.name.clone(), local.clone()))
+            });
+
+        let mut working_dir_override: Option<PathBuf> = None;
+
         // Captured before the launch command gets wrapped in umu-run/Proton
         // (see below) or reconstructed into a shell string, since by then
         // the "command" is the wrapper's path, not the game's.
-        let (target_launch_string, game_executable_path) = if let Some(emulator) = emulator {
+        let (target_launch_string, game_executable_path) = if let Some((emulator_name, local_emulator)) =
+            local_emulator
+        {
+            target_command.make_absolute(PathBuf::from(install_dir.clone()));
+
+            let mut args = shell_words::split(&local_emulator.args)
+                .map_err(|e| ProcessError::InvalidArguments(e.to_string()))?;
+            if args.iter().any(|v| v.contains("{rom}")) {
+                args.iter_mut().for_each(|v| {
+                    *v = v.replace("{rom}", &target_command.command);
+                });
+            } else {
+                args.push(target_command.command.clone());
+            }
+            // The game's launch option can carry its own args for the
+            // emulator on top of the ROM path. `{args}` places them, since
+            // some emulators only take flags before the file.
+            if let Some(pos) = args.iter().position(|v| v == "{args}") {
+                args.splice(pos..=pos, target_command.args.iter().cloned());
+            } else {
+                args.extend(target_command.args.iter().cloned());
+            }
+
+            let exe_command = match local_emulator.kind {
+                EmulatorOverrideKind::Executable => {
+                    if !Path::new(&local_emulator.path).is_file() {
+                        return Err(ProcessError::EmulatorOverrideMissing(
+                            emulator_name,
+                            local_emulator.path,
+                        ));
+                    }
+                    ParsedCommand {
+                        env: target_command.env.clone(),
+                        command: local_emulator.path.clone(),
+                        args,
+                    }
+                }
+                EmulatorOverrideKind::Flatpak => {
+                    let flatpak = flatpak::find_flatpak()
+                        .ok_or_else(|| ProcessError::FlatpakMissing(emulator_name.clone()))?;
+                    if !flatpak::is_installed(&flatpak, &local_emulator.path) {
+                        return Err(ProcessError::EmulatorOverrideMissing(
+                            emulator_name,
+                            local_emulator.path,
+                        ));
+                    }
+                    // The sandbox can't see the game's files unless we let
+                    // it; read-write, since plenty of emulators keep saves
+                    // next to the ROM.
+                    let mut flatpak_args = vec![
+                        "run".to_owned(),
+                        format!("--filesystem={install_dir}"),
+                        local_emulator.path.clone(),
+                    ];
+                    flatpak_args.extend(args);
+                    // Relative paths the emulator resolves should land in
+                    // the game's directory, not flatpak's.
+                    working_dir_override = PathBuf::from(&target_command.command)
+                        .parent()
+                        .map(PathBuf::from);
+                    ParsedCommand {
+                        env: target_command.env.clone(),
+                        command: flatpak.to_string_lossy().into_owned(),
+                        args: flatpak_args,
+                    }
+                }
+            };
+            let game_executable_path = PathBuf::from(&exe_command.command);
+
+            // The emulator is a program on this machine, so it runs
+            // natively regardless of which platform the server-side
+            // emulator was built for.
+            let native_handler =
+                self.fetch_process_handler(&db_lock, &self.current_platform, None)?;
+            info!(
+                "{}: using local emulator {} ({}) via {:?}",
+                meta.id,
+                emulator_name,
+                local_emulator.path,
+                native_handler.id()
+            );
+
+            (
+                native_handler.create_launch_process(
+                    &meta,
+                    exe_command.reconstruct(),
+                    game_version,
+                    install_dir,
+                    &db_lock,
+                )?,
+                game_executable_path,
+            )
+        } else if let Some(emulator) = emulator {
             let err = ProcessError::RequiredDependency(
                 emulator.game_id.clone(),
                 emulator.version_id.clone(),
@@ -705,9 +811,8 @@ impl ProcessManager<'_> {
         // executed (the emulator's, if there is one), not the install
         // root - games/emulators that resolve their own assets relative to
         // their own binary rather than an absolute path expect this.
-        let working_dir = game_executable_path
-            .parent()
-            .map(PathBuf::from)
+        let working_dir = working_dir_override
+            .or_else(|| game_executable_path.parent().map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from(install_dir));
 
         let launch_parameters =

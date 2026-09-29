@@ -10,6 +10,7 @@ use database::{
 use download_manager::error::DownloadManagerError;
 use games::scan::scan_install_dirs;
 use log::error;
+use serde::Serialize;
 use serde_json::Value;
 
 // Will, in future, return disk/remaining size
@@ -112,4 +113,42 @@ pub fn fetch_system_data() -> SystemData {
 #[tauri::command]
 pub fn is_gamescope() -> bool {
     std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+}
+
+// Every emulator (as a game on the server) and version of it that a
+// locally-known game version launches through, so the Emulators settings
+// page can offer an override for them even when the emulator isn't in the
+// user's library.
+#[derive(Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferencedEmulator {
+    game_id: String,
+    version_id: String,
+}
+
+#[tauri::command]
+pub fn fetch_referenced_emulators() -> Vec<ReferencedEmulator> {
+    let db_lock = borrow_db_checked();
+    let mut emulators: Vec<ReferencedEmulator> = db_lock
+        .applications
+        .game_versions
+        .values()
+        .flat_map(|version| version.launches.iter())
+        .filter_map(|launch| {
+            launch.emulator.as_ref().map(|e| ReferencedEmulator {
+                game_id: e.game_id.clone(),
+                version_id: e.version_id.clone(),
+            })
+        })
+        .collect();
+    emulators.sort();
+    emulators.dedup();
+    emulators
+}
+
+// Installed Flatpak apps, for picking a Flatpak emulator on the Emulators
+// settings page. Empty when Flatpak isn't available.
+#[tauri::command]
+pub fn fetch_flatpak_apps() -> Vec<process::flatpak::FlatpakApp> {
+    process::flatpak::list_apps()
 }

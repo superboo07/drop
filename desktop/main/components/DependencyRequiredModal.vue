@@ -13,6 +13,19 @@
                 version.displayName ?? version.versionPath
               }}) installed.
             </p>
+            <p
+              v-if="game.type === 'Emulator'"
+              class="mt-2 text-sm text-zinc-400"
+            >
+              Already have it installed on this machine?
+              <button
+                type="button"
+                @click="useOwnEmulator"
+                class="font-semibold text-blue-400 hover:text-blue-500"
+              >
+                Use your own copy instead
+              </button>
+            </p>
           </div>
         </div>
       </div>
@@ -83,6 +96,12 @@ const installDir = ref(0);
 function cancel() {
   // @ts-expect-error
   model.value = undefined;
+}
+
+const router = useRouter();
+async function useOwnEmulator() {
+  cancel();
+  await router.push("/settings/emulators");
 }
 
 const installError = ref<string | undefined>();

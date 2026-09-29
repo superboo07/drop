@@ -25,6 +25,8 @@ pub enum ProcessError {
     LunaBridgeMissing(String),
     LunaExtractFailed(String),
     NestedSession(String),
+    EmulatorOverrideMissing(String, String),
+    FlatpakMissing(String),
 }
 
 impl Display for ProcessError {
@@ -61,6 +63,12 @@ impl Display for ProcessError {
             ProcessError::NestedSession(error) => {
                 &format!("Could not start the nested window session: {error}")
             }
+            ProcessError::EmulatorOverrideMissing(name, path) => &format!(
+                "Your own copy of {name} is set to '{path}', but it isn't installed there. Fix it under Settings → Emulators."
+            ),
+            ProcessError::FlatpakMissing(name) => &format!(
+                "Your own copy of {name} is set to a Flatpak, but Flatpak isn't installed on this machine."
+            ),
             ProcessError::NoCompat => "No Proton compatibility layer could be found for this tool. Add an override or set your global default in settings.",
         };
         write!(f, "{s}")

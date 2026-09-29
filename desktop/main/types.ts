@@ -30,7 +30,7 @@ export type AppState = {
 
 export type Game = {
   id: string;
-  type: "Game" | "Executor" | "Redist";
+  type: "Game" | "Emulator" | "Dependency";
   mName: string;
   mShortDescription: string;
   mDescription: string;
@@ -134,4 +134,22 @@ export type Settings = {
   lunaTranslatorPath: string | null;
   lunaBridgePath: string | null;
   lunaPort: number;
+  byoEmulator: boolean;
+  emulatorOverrides: { [emulatorGameId: string]: EmulatorOverride };
+};
+
+export type LocalEmulator = {
+  kind: "executable" | "flatpak";
+  // Executable path, or the Flatpak's app ID
+  path: string;
+  args: string;
+};
+
+export type EmulatorOverride = {
+  name: string;
+  // For every version without its own entry in `versions`
+  default: LocalEmulator | null;
+  versions: {
+    [emulatorVersionId: string]: LocalEmulator & { versionName: string };
+  };
 };

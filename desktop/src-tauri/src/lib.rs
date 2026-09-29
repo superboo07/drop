@@ -235,6 +235,8 @@ pub fn run() {
             log_frontend,
             // User utils
             update_settings,
+            fetch_referenced_emulators,
+            fetch_flatpak_apps,
             fetch_settings,
             // Auth
             auth_initiate,

@@ -37,89 +37,128 @@ rustflags = ["-C", "target-feature=+aes,+sse2"]
 [dependencies]
 anyhow = "1.0.101"
 async-trait = "0.1.89"
-atomic-instant-full = "0.1.0"
+# Unused for now; uncomment to re-enable.
+# atomic-instant-full = "0.1.0"
 bitcode = "0.6.6"
 bytes = "1.10.1"
-cacache = "13.1.0"
+# Unused for now; uncomment to re-enable.
+# cacache = "13.1.0"
 chrono = { version = "0.4.38", features = ["serde"] }
 client = { path = "./client", version = "0.1.0" } # client
 database = { path = "./database" } # database
-deranged = "=0.4.0"
-dirs = "6.0.0"
+# Unused for now; uncomment to re-enable.
+# deranged = "=0.4.0"
+# Unused for now; uncomment to re-enable.
+# dirs = "6.0.0"
 download_manager = { path = "./download_manager", version = "0.1.0" } # download manager
-filetime = "0.2.25"
-futures-core = "0.3.31"
+# Unused for now; uncomment to re-enable.
+# filetime = "0.2.25"
+# Unused for now; uncomment to re-enable.
+# futures-core = "0.3.31"
 futures-lite = "2.6.0"
 games = { path = "./games", version = "0.1.0" } # games
-gethostname = "1.0.1"
+# Unused for now; uncomment to re-enable.
+# gethostname = "1.0.1"
 hex = "0.4.3"
-http = "1.1.0"
-http-serde = "2.1.1"
-humansize = "2.1.3"
-known-folders = "1.2.0"
+# Unused for now; uncomment to re-enable.
+# http = "1.1.0"
+# Unused for now; uncomment to re-enable.
+# http-serde = "2.1.1"
+# Unused for now; uncomment to re-enable.
+# humansize = "2.1.3"
+# Unused for now; uncomment to re-enable.
+# known-folders = "1.2.0"
 log = "0.4.22"
-md5 = "0.7.0"
-native_model = { path = "../../libraries/native_model", features = [
-  "rmp_serde_1_3",
-] }
-page_size = "0.6.0"
-parking_lot = "0.12.3"
+# Unused for now; uncomment to re-enable.
+# md5 = "0.7.0"
+# Unused for now; uncomment to re-enable.
+# native_model = { path = "../../libraries/native_model", features = [
+#   "rmp_serde_1_3",
+# ] }
+# Unused for now; uncomment to re-enable.
+# page_size = "0.6.0"
+# Unused for now; uncomment to re-enable.
+# parking_lot = "0.12.3"
 process = { path = "./process" } # process
-rand = "0.10.2"
-rayon = "1.10.0"
-regex = "1.11.1"
+# Unused for now; uncomment to re-enable.
+# rand = "0.10.2"
+# Unused for now; uncomment to re-enable.
+# rayon = "1.10.0"
+# Unused for now; uncomment to re-enable.
+# regex = "1.11.1"
 remote = { path = "./remote", version = "0.1.0" } # remote
-reqwest = { version = "0.12.28", default-features = false, features = [
-  "blocking",
-  "http2",
-  "json",
-  "native-tls-alpn",
-  "rustls-tls",
-  "rustls-tls-native-roots",
-  "stream",
-] }
-reqwest-middleware = "0.4.0"
-reqwest-middleware-cache = "0.1.1"
+# Unused for now; uncomment to re-enable.
+# reqwest = { version = "0.12.28", default-features = false, features = [
+#   "blocking",
+#   "http2",
+#   "json",
+#   "native-tls-alpn",
+#   "rustls-tls",
+#   "rustls-tls-native-roots",
+#   "stream",
+# ] }
+# Unused for now; uncomment to re-enable.
+# reqwest-middleware = "0.4.0"
+# Unused for now; uncomment to re-enable.
+# reqwest-middleware-cache = "0.1.1"
 reqwest-websocket = "0.5.0"
-schemars = "0.8.22"
+# Unused for now; uncomment to re-enable.
+# schemars = "0.8.22"
 serde_json = "1"
-serde_with = "3.12.0"
-sha1 = "0.10.6"
+# Unused for now; uncomment to re-enable.
+# serde_with = "3.12.0"
+# Unused for now; uncomment to re-enable.
+# sha1 = "0.10.6"
 sha2 = "0.10.9"
-shared_child = "1.0.1"
-slice-deque = "0.3.0"
-sysinfo = "0.36.1"
-tar = "0.4.46"
+# Unused for now; uncomment to re-enable.
+# shared_child = "1.0.1"
+# Unused for now; uncomment to re-enable.
+# slice-deque = "0.3.0"
+# Unused for now; uncomment to re-enable.
+# sysinfo = "0.36.1"
+# Unused for now; uncomment to re-enable.
+# tar = "0.4.46"
 tauri-plugin-autostart = "*"
 tauri-plugin-deep-link = "*"
 tauri-plugin-dialog = "*"
 tauri-plugin-opener = "*"
 tauri-plugin-os = "*"
 tauri-plugin-shell = "*"
-tempfile = "3.19.1"
-throttle_my_fn = "0.2.6"
-tokio-util = { version = "0.7.16", features = ["io"] }
-umu-wrapper-lib = "0.1.0"
+# Unused for now; uncomment to re-enable.
+# tempfile = "3.19.1"
+# Unused for now; uncomment to re-enable.
+# throttle_my_fn = "0.2.6"
+# Unused for now; uncomment to re-enable.
+# tokio-util = { version = "0.7.16", features = ["io"] }
+# Unused for now; uncomment to re-enable.
+# umu-wrapper-lib = "0.1.0"
 url = "2.5.2"
 urlencoding = "2.1.3"
 utils = { path = "./utils" } # utils
-walkdir = "2.5.0"
-webbrowser = "1.0.2"
-whoami = "1.6.0"
-wry = { version = "*", features = [] }
-zstd = "0.13.3"
+# Unused for now; uncomment to re-enable.
+# walkdir = "2.5.0"
+# Unused for now; uncomment to re-enable.
+# webbrowser = "1.0.2"
+# Unused for now; uncomment to re-enable.
+# whoami = "1.6.0"
+# Unused for now; uncomment to re-enable.
+# wry = { version = "*", features = [] }
+# Unused for now; uncomment to re-enable.
+# zstd = "0.13.3"
 
 [dependencies.log4rs]
 version = "1.3.0"
 features = ["console_appender", "file_appender"]
 
-[dependencies.rustbreak]
-version = "2"
-features = ["other_errors"] # You can also use "yaml_enc" or "bin_enc"
+# Unused for now; uncomment to re-enable.
+# [dependencies.rustbreak]
+# version = "2"
+# features = ["other_errors"] # You can also use "yaml_enc" or "bin_enc"
 
-[dependencies.rustix]
-version = "0.38.37"
-features = ["fs"]
+# Unused for now; uncomment to re-enable.
+# [dependencies.rustix]
+# version = "0.38.37"
+# features = ["fs"]
 
 [dependencies.serde]
 version = "1"
@@ -133,9 +172,10 @@ features = ["protocol-asset", "tray-icon", "unstable", "devtools"]
 version = "1.40.0"
 features = ["rt", "signal", "tokio-macros"]
 
-[dependencies.uuid]
-version = "1.10.0"
-features = ["fast-rng", "macro-diagnostics", "v4"]
+# Unused for now; uncomment to re-enable.
+# [dependencies.uuid]
+# version = "1.10.0"
+# features = ["fast-rng", "macro-diagnostics", "v4"]
 
 [build-dependencies]
 tauri-build = { version = "*", features = [] }

@@ -99,6 +99,8 @@ services:
       # git's global config is a volume too, and containerEnv points
       # GIT_CONFIG_GLOBAL into it -- which is also what makes the copy of the
       # host's ~/.gitconfig that the Dev Containers extension drops in inert.
+      # HTTP(S) push credentials are stored here too (credentials, set up by
+      # the Dockerfile's credential.helper), so they survive rebuilds as well.
       - drop-ssh:/root/.ssh
       - drop-gitconfig:/root/.config/git
       # Claude Code's credentials, settings and per-project history.

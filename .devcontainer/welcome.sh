@@ -87,6 +87,10 @@ if ! git config --global --get user.email >/dev/null 2>&1; then
   an "Authentication Key" if you also push over SSH with it:
 
       cat /root/.ssh/id_ed25519.pub
+
+  Pushing over HTTP(S) instead: the first push asks for your password
+  or token and git keeps it in /root/.config/git/credentials (the same
+  volume), so it is asked once, not on every push or rebuild.
   ------------------------------------------------------------------
 
 MSG

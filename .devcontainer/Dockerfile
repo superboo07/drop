@@ -236,6 +236,15 @@ ENV DISABLE_INSTALLATION_CHECKS=1
 RUN mkdir -p /root/.ssh /root/.config/git /root/.claude /root/.local/share/pnpm/store \
 	&& chmod 700 /root/.ssh
 
+# HTTP(S) remotes (the Forgejo origin, GitHub) need a password or token on every
+# push unless a credential helper keeps it. git's own default for `store` is
+# /root/.git-credentials, which is on no volume and so is gone after a rebuild;
+# `cache` is memory only. Store it in the gitconfig volume instead, so you log in
+# once per container volume, like the ssh key. Set in the system config (the
+# image), so it needs no setup and a user's own global helper still adds to it.
+# Plain text, mode 0600, never leaves the volume; no keyring (no session D-Bus).
+RUN git config --system credential.helper 'store --file /root/.config/git/credentials'
+
 RUN mkdir -p /commandhistory && touch /commandhistory/.bash_history
 ENV HISTFILE=/commandhistory/.bash_history
 

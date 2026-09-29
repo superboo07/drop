@@ -36,6 +36,28 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
         fi
     done
 
+    # Skip the whole thing when nothing that goes into the output has
+    # changed since it was last built: each submodule's commit (and any
+    # local edits to it), Drop's patches, this script and the builder's
+    # Dockerfile. build_appimage.sh calls this on every build, and
+    # rebuilding three C projects from scratch each time was pure waste.
+    # DROP_VENDOR_REBUILD=1 forces a rebuild anyway.
+    inputs_hash="$(
+        for module in openbox picom tint2 libconfig; do
+            echo "$module $(git -C "$SCRIPT_DIR/$module" rev-parse HEAD)"
+            git -C "$SCRIPT_DIR/$module" status --porcelain
+        done
+        cd "$SCRIPT_DIR" && sha256sum build.sh Dockerfile patches/*
+    )"
+    inputs_hash="$(printf '%s\n' "$inputs_hash" | sha256sum | cut -d' ' -f1)"
+    stamp="$OUT_DIR/.inputs-sha256"
+    if [ -z "${DROP_VENDOR_REBUILD:-}" ] \
+        && [ -x "$OUT_DIR/bin/openbox" ] \
+        && [ "$(cat "$stamp" 2>/dev/null)" = "$inputs_hash" ]; then
+        echo ">>> Nested-session tools are up to date ($VENDOR_DIR/out/nested-session)"
+        exit 0
+    fi
+
     echo ">>> Building nested-session builder image..."
     docker build -t "$BUILDER_IMAGE" "$SCRIPT_DIR"
 
@@ -62,6 +84,7 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
         -w /workspace \
         "$BUILDER_IMAGE" \
         bash "$VENDOR_DIR/build.sh"
+    echo "$inputs_hash" > "$stamp"
     echo ""
     echo "Done: $OUT_DIR"
     exit 0

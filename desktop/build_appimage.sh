@@ -61,9 +61,13 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     # re-unpacks the whole dependency tree before it can even start compiling.
     # (The build directory itself doesn't need one - it's src-tauri/target on
     # the bind mount, so it already persists on the host.)
+    # Tauri's bundler likewise downloads linuxdeploy, its plugins and AppRun
+    # into ~/.cache/tauri on first use, and corepack the exact pnpm the repo
+    # pins into its own cache - every build, without volumes.
     echo ">>> Running build inside Docker..."
     docker run --rm \
         -e DROP_IN_DOCKER=1 \
+        -e CARGO_TERM_VERBOSE \
         -e npm_config_store_dir=/pnpm-store \
         -v "$REPO_ROOT":/workspace \
         -v drop-appimage-pnpm-store:/pnpm-store \
@@ -71,6 +75,8 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
         -v drop-appimage-main-node-modules:"/workspace/$APP_DIR/main/node_modules" \
         -v drop-appimage-cargo-registry:/root/.cargo/registry \
         -v drop-appimage-cargo-git:/root/.cargo/git \
+        -v drop-appimage-tauri-tools:/root/.cache/tauri \
+        -v drop-appimage-corepack:/root/.cache/node/corepack \
         -w /workspace \
         "$BUILDER_IMAGE" \
         bash "$APP_DIR/build_appimage.sh"
@@ -82,10 +88,15 @@ fi
 # This container has no TTY, so pnpm can't prompt to confirm purging/
 # reinstalling node_modules when the lockfile/workspace config doesn't match
 # what's already there - CI mode answers that non-interactively instead of
-# aborting. Exported (not inlined per-command) since build.mjs's own `pnpm
-# install` inside main/ (triggered by `pnpm tauri build`'s beforeBuildCommand
-# below) needs it too, not just the install on the next line.
-export CI=true
+# aborting. It's set on the pnpm commands alone (here, and in build.mjs for
+# the frontend's install), never exported: cargo reads CI too, and turns
+# incremental compilation off when it's set, overriding [profile.release].
+
+# The AppImage runtime is baked into the builder image (Dockerfile.build).
+# tauri's bundler packs its AppImage through linuxdeploy's appimage plugin,
+# which downloads the runtime on every build unless told where one is; the
+# repack in step 4 passes it to appimagetool directly.
+export LDAI_RUNTIME_FILE=/opt/appimage-runtime-x86_64
 
 # ── 1. Work out the version to stamp into this build ──────────────────────────
 # The base comes from tauri.conf.json (the release number the branch is
@@ -120,7 +131,7 @@ echo ">>> Building version $APP_VERSION"
 # started.
 echo ">>> Installing dependencies..."
 cd /workspace
-pnpm install --filter drop-app
+CI=true pnpm install --filter drop-app
 cd "/workspace/$APP_DIR"
 
 # ── 3. Build the frontend(s) + Tauri AppImage bundle ──────────────────────────
@@ -129,7 +140,22 @@ cd "/workspace/$APP_DIR"
 # just the version for this build; it's merged over tauri.conf.json rather
 # than editing it, so nothing has to be reverted afterwards.
 echo ">>> Running tauri build (appimage only)..."
-pnpm tauri build --bundles appimage --config "{\"version\": \"$APP_VERSION\"}"
+# CARGO_TERM_VERBOSE=true (passed in from the host) makes this verbose too,
+# which is how to see cargo's "Dirty <crate>: <reason>" for a rebuild -
+# tauri drops cargo's own verbose lines unless it's verbose itself.
+pnpm tauri build ${CARGO_TERM_VERBOSE:+--verbose} --bundles appimage --config "{\"version\": \"$APP_VERSION\"}"
+
+# tauri-codegen caches what it embeds - the brotli'd frontend
+# (tauri-codegen-assets/) and the app icon - as files in drop-app's OUT_DIR,
+# named by their content's checksum and written only when missing, then
+# include_bytes!s them. New ones are created *during* the compile, so they're
+# newer than cargo's record of when that compile started, and the next build
+# recompiles drop-app over them - once more after every frontend or icon
+# change, for nothing. Content-addressed files can't be stale, so backdate
+# them all.
+find src-tauri/target/release/build/drop-app -type f -regextype posix-extended \
+    -regex '.*/out/(tauri-codegen-assets/)?[0-9a-f]{64}(\.[A-Za-z0-9]+)?' \
+    -exec touch -m -d @1 {} +
 
 # ── 4. Inject vendored umu-run/winetricks (Steam Deck etc. support) ───────────
 # These have no distro package manager to install umu-launcher/winetricks on,
@@ -198,12 +224,18 @@ cp -a "$NESTED_TOOLS" "$APPDIR/usr/libexec/drop-tools/nested-session"
 
 echo ">>> Repacking AppImage..."
 rm -f "$APPIMAGE"
-ARCH=x86_64 appimagetool "$APPDIR" "$APPIMAGE"
+# The runtime is baked into the builder image; without --runtime-file,
+# appimagetool downloads it on every build.
+ARCH=x86_64 appimagetool --runtime-file /opt/appimage-runtime-x86_64 "$APPDIR" "$APPIMAGE"
 
 # ── 5. Copy the result out to the repo root ───────────────────────────────────
 OUTPUT_NAME="Drop Desktop Client_${APP_VERSION}_amd64.AppImage"
 # The repo root, not desktop/, so built AppImages all collect in one place.
-cp "$APPIMAGE" "$REPO_ROOT/$OUTPUT_NAME"
+# Via a temp name and a rename, since the previous build's AppImage is quite
+# possibly running right now - cp can't overwrite an executing file ("Text
+# file busy"); a rename just replaces the directory entry.
+cp "$APPIMAGE" "$REPO_ROOT/.$OUTPUT_NAME.tmp"
+mv -f "$REPO_ROOT/.$OUTPUT_NAME.tmp" "$REPO_ROOT/$OUTPUT_NAME"
 
 echo ""
 echo "Done: $OUTPUT_NAME"

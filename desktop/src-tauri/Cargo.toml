@@ -20,7 +20,12 @@ members = [
 ]
 
 [lib]
-crate-type = ["cdylib", "rlib", "staticlib"]
+# Only the rlib, which the drop-app binary links. Tauri's template also asks
+# for cdylib + staticlib, but only Android/iOS builds use those, and each is
+# a separate link of the whole dependency graph on every build (the
+# staticlib alone is ~280MB) - work for two files nothing reads. Put them
+# back if a mobile target is ever added.
+crate-type = ["rlib"]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
@@ -141,9 +146,19 @@ tauri-plugin-single-instance = { version = "2.0.0", features = ["deep-link"] }
 libloading = "0.7"
 
 [profile.release]
-lto = true
+# No cross-crate LTO: every crate is still optimised at opt-level 3, but the
+# final link doesn't re-optimise the whole program. That pass reran over all
+# ~600 crates whenever anything in drop-app changed - minutes per build (fat
+# LTO: single-threaded) for a few percent of runtime a game launcher's UI
+# doesn't need.
+lto = false
 panic = "abort"
-codegen-units = 1
+codegen-units = 16
+# Reuse the previous build's work for whatever didn't change. Cargo only
+# applies this to the workspace's own crates (registry dependencies are built
+# once and cached as-is), so a small edit to drop-app recompiles roughly what
+# it touched rather than the whole crate.
+incremental = true
 
 [profile.dev.package."*"]
 # Set the default for dependencies in Development mode.

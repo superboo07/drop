@@ -82,4 +82,9 @@ RUN curl -fsSL -o /usr/local/bin/appimagetool \
         https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
     && chmod +x /usr/local/bin/appimagetool
 
+# The AppImage runtime appimagetool prepends to the image. It downloads this
+# itself on every run otherwise; build_appimage.sh passes it as --runtime-file.
+RUN curl -fsSL -o /opt/appimage-runtime-x86_64 \
+        https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+
 WORKDIR /workspace

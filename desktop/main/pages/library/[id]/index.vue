@@ -122,7 +122,7 @@
                       class="absolute inset-0"
                       @click="
                         fullscreenImage =
-                          game.mImageCarouselObjectIds[currentImageIndex]
+                          game.mImageCarouselObjectIds[currentImageIndex] ?? null
                       "
                     >
                       <TransitionGroup name="slide" tag="div" class="h-full">
@@ -693,7 +693,8 @@ import { InstalledType, type EmulatorOverride, type Settings } from "~/types";
 
 const route = useRoute();
 const router = useRouter();
-const id = route.params.id.toString();
+// Always set: this page is the [id] route
+const id = route.params.id!.toString();
 
 const { game, status, version } = await useGame(id);
 
@@ -787,6 +788,7 @@ async function install() {
     installLoading.value = true;
     const versionOption =
       versionOptions.value[Math.max(installVersionIndex.value, 0)];
+    if (!versionOption) throw new Error("Selected version no longer exists");
     const isLatest = installVersionIndex.value == -1;
 
     const games = [
@@ -842,6 +844,7 @@ watch(
 function formatVersionOptionText(index: number) {
   if (!versionOptions.value) return undefined;
   const versionOption = versionOptions.value[Math.max(index, 0)];
+  if (!versionOption) return undefined;
   const { installSize, downloadSize } = versionOption.size;
   // installSize is the whole version on disk. downloadSize is only smaller
   // when some of it is already installed (a delta or a reinstall), which is

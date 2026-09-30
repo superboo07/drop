@@ -38,8 +38,7 @@ function getNavRoot(): ParentNode {
   // Scope to the topmost open dialog so navigation doesn't reach through
   // the backdrop into the page behind it.
   const dialogs = document.querySelectorAll('[role="dialog"]');
-  if (dialogs.length > 0) return dialogs[dialogs.length - 1];
-  return document;
+  return dialogs[dialogs.length - 1] ?? document;
 }
 
 function getFocusableCandidates(): HTMLElement[] {

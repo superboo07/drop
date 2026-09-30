@@ -68,7 +68,7 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     docker run --rm \
         -e DROP_IN_DOCKER=1 \
         -e CARGO_TERM_VERBOSE \
-        -e npm_config_store_dir=/pnpm-store \
+        -e pnpm_config_store_dir=/pnpm-store \
         -v "$REPO_ROOT":/workspace \
         -v drop-appimage-pnpm-store:/pnpm-store \
         -v drop-appimage-node-modules:/workspace/node_modules \

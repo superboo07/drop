@@ -34,7 +34,7 @@
 
     // pnpm's store on its volume (docker-compose.yml), not next to the project
     // where pnpm would otherwise put it when home is on another filesystem.
-    "npm_config_store_dir": "/root/.local/share/pnpm/store",
+    "pnpm_config_store_dir": "/root/.local/share/pnpm/store",
 
     // git's global config lives on a volume (docker-compose.yml), not in the
     // container's filesystem and not copied from the host. This is what points

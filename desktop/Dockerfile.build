@@ -22,8 +22,9 @@ FROM ubuntu:24.04
 # RUN lines below so there's one obvious place to bump them and nothing is
 # spelled out twice inside a curl invocation. Override at build time with
 # `docker build --build-arg UMU_VERSION=x.y.z`.
-ARG NODE_VERSION=20.20.2
-ARG PNPM_VERSION=10
+# pnpm 11+ needs Node 22 or newer.
+ARG NODE_VERSION=24.21.0
+ARG PNPM_VERSION=12
 # Proton launcher bundled into the AppImage - see the vendoring step below.
 ARG UMU_VERSION=1.4.0
 # Winetricks releases are dated, not semver.

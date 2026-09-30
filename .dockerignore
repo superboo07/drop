@@ -1,6 +1,9 @@
 /sites
 /cli
 /desktop
+# ...except the workspace manifests, which the deps stage needs
+!/sites/*/package.json
+!/desktop/package.json
 # go backend (.dockerignore has no inline comments)
 /backend
 

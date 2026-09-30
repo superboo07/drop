@@ -20,8 +20,9 @@ WORKDIR /app
 COPY package.json ./
 ## prevent prompt to download
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-## setup for offline
-RUN corepack pack
+## setup for offline. Since pnpm 11, corepack's pnpm is a wrapper that
+## downloads pnpm's native binary on first run, so run it once here too.
+RUN corepack pack && pnpm --version
 ## don't call out to network anymore
 ENV COREPACK_ENABLE_NETWORK=0
 
@@ -32,8 +33,14 @@ FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY server/package.json ./server/
 COPY libraries/base/package.json ./libraries/base/
+## Every other workspace member's manifest too, or a frozen install refuses
+## the lockfile; only the server and the layer it extends are installed.
+COPY desktop/package.json ./desktop/
+COPY sites/docs/package.json ./sites/docs/
+COPY sites/promo/package.json ./sites/promo/
 RUN --mount=type=cache,id=drop-pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
+    pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store \
+    --filter drop... --filter my-nuxt-layer...
 
 ### BUILD TORRENTIAL
 # Bookworm-pinned to match the runtime image's glibc (a trixie build would not run on bookworm).
@@ -109,7 +116,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 ## The Prisma CLI for migrations, from a manifest rather than a bare global
 ## install so its overrides can patch the dependencies prisma pins. --dir
 ## keeps the cwd at /app, where corepack reads the pnpm version.
-COPY server/build/prisma-cli/package.json /opt/prisma-cli/
+COPY server/build/prisma-cli/package.json server/build/prisma-cli/pnpm-workspace.yaml /opt/prisma-cli/
 RUN pnpm install --dir /opt/prisma-cli
 ENV PATH="/opt/prisma-cli/node_modules/.bin:$PATH"
 # init prisma to download all required files

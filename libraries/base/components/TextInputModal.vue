@@ -62,12 +62,6 @@
 </template>
 
 <script setup lang="ts">
-import {
-  Dialog,
-  DialogTitle,
-  TransitionChild,
-  TransitionRoot,
-} from "@headlessui/vue";
 import type {
   ModalDatas,
   ModalEvents,

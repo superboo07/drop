@@ -6,6 +6,7 @@ import TextInputModal from "../components/TextInputModal.vue";
 export type ModalCallbackType<T extends ModalType> = (
   event: ModalEvents[T],
   close: () => void,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ...args: any[]
 ) => Promise<void> | void;
 
@@ -71,4 +72,6 @@ export function createModal<T extends ModalType>(
 }
 
 export const useModalStack = () =>
+  // Holds modals of every ModalType, so the element type can't be narrowed
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   useState<Array<ModalStackElement<any>>>("modal-stack", () => []);

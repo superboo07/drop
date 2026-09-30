@@ -37,7 +37,7 @@
 <script setup lang="ts">
 const stack = useModalStack();
 
-async function handleCallback(modalIdx: number, event: string, args: any[]) {
+async function handleCallback(modalIdx: number, event: string, args: unknown[]) {
   const modal = stack.value[modalIdx];
   if (!modal) return;
   const close = () => {

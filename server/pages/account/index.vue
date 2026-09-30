@@ -1,8 +1,7 @@
 <template>
-  <!-- go away eslint -->
-  <div />
-  <!-- I don't want to localize this -->
-  <!--
+  <div>
+    <!-- I don't want to localize this -->
+    <!--
   <div>
     <div v-if="user" class="mx-auto max-w-2xl lg:mx-0">
       <h2
@@ -80,7 +79,7 @@
       <div class="text-zinc-400">Loading account information...</div>
     </div>
   </div>
-  -->
+  --></div>
 </template>
 
 <script setup lang="ts">

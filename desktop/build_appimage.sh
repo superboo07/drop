@@ -132,6 +132,14 @@ echo ">>> Building version $APP_VERSION"
 echo ">>> Installing dependencies..."
 cd /workspace
 CI=true pnpm install --filter drop-app
+
+# Stop on high/critical advisories in what the AppImage ships: this package's
+# production deps and the Nuxt view's (its own lockfile). Same gate as the
+# release workflow's audit job. Accept one that doesn't apply with
+# `auditConfig.ignoreGhsas` in the relevant pnpm-workspace.yaml.
+echo ">>> Auditing dependencies..."
+pnpm --filter drop-app... audit --prod --audit-level high
+pnpm --dir "$APP_DIR/main" audit --prod --audit-level high
 cd "/workspace/$APP_DIR"
 
 # ── 3. Build the frontend(s) + Tauri AppImage bundle ──────────────────────────

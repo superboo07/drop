@@ -16,7 +16,29 @@ on:
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your app, and upload the artifacts to the release.
 
 jobs:
+  # High/critical advisories in what the client ships (desktop's production
+  # deps and the Nuxt view's, which has its own lockfile) stop the release.
+  # Same gate as build_appimage.sh. Reads only the lockfiles.
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: audit desktop
+        run: pnpm --filter drop-app... audit --prod --audit-level high
+
+      - name: audit desktop view
+        run: pnpm --dir desktop/main audit --prod --audit-level high
+
   publish-tauri:
+    needs: audit
     permissions:
       contents: write
     strategy:

@@ -42,6 +42,23 @@ RUN --mount=type=cache,id=drop-pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store \
     --filter drop... --filter my-nuxt-layer...
 
+### AUDIT DEPS
+## Fails the build on high/critical advisories in what ships: the server's and
+## base layer's production deps, and the runtime image's Prisma CLI (which has
+## no lockfile, so one is resolved here the way its install will resolve).
+## Advisories are published after a lockfile is, so this stage re-runs when
+## AUDIT_DATE changes (build-docker-image.sh passes today's date); an unchanged
+## lockfile alone would otherwise keep a passing result cached forever.
+## Accept an advisory that doesn't apply with `auditConfig.ignoreGhsas` in
+## pnpm-workspace.yaml, with a comment saying why.
+FROM deps AS audit
+COPY server/build/prisma-cli/package.json server/build/prisma-cli/pnpm-workspace.yaml /opt/prisma-cli/
+ARG AUDIT_DATE
+RUN pnpm --filter drop... --filter my-nuxt-layer... audit --prod --audit-level high \
+    && pnpm install --dir /opt/prisma-cli --lockfile-only \
+    && pnpm audit --dir /opt/prisma-cli --audit-level high \
+    && touch /audit-passed
+
 ### BUILD TORRENTIAL
 # Bookworm-pinned to match the runtime image's glibc (a trixie build would not run on bookworm).
 FROM rustlang/rust:nightly-bookworm-slim AS torrential-build
@@ -136,5 +153,9 @@ ENV DATA="/data"
 ENV NGINX_CONFIG="/nginx.conf"
 # Nuxt's port
 ENV PORT=4000
+
+## Only to make the image depend on the audit stage; the file is empty, so
+## this layer stays cached whenever the audit passes.
+COPY --from=audit /audit-passed /
 
 CMD ["sh", "/app/startup/launch.sh"]

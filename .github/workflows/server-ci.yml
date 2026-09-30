@@ -69,3 +69,18 @@ jobs:
       - name: Lint
         working-directory: server
         run: pnpm run lint
+
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      # Same gate as the Dockerfile's audit stage: high/critical advisories in
+      # the server image's production dependencies. Reads only the lockfile.
+      - name: Audit
+        run: pnpm --filter drop... --filter my-nuxt-layer... audit --prod --audit-level high

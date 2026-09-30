@@ -14,6 +14,7 @@ BUILD_GIT_REF="$(git rev-parse HEAD)"
 docker build -t "$IMAGE_TAG" \
   --build-arg BUILD_DROP_VERSION="$BUILD_DROP_VERSION" \
   --build-arg BUILD_GIT_REF="$BUILD_GIT_REF" \
+  --build-arg AUDIT_DATE="$(date -u +%F)" \
   .
 
 # `docker save` can't write an unqualified name: podman (which `docker` is in

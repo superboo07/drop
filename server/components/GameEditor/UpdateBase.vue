@@ -20,7 +20,7 @@
           <span v-if="selectedBase" class="block truncate">
             {{ versionName(selectedBase) }}
             <span class="text-zinc-500"
-              >· {{ optionDetail(selectedBase) }}</span
+              >{{ $t("chars.middot") }} {{ optionDetail(selectedBase) }}</span
             >
           </span>
           <span v-else class="block truncate text-zinc-600">{{
@@ -59,14 +59,16 @@
               >
                 {{ versionName(candidate) }}
                 <span :class="active ? 'text-blue-100' : 'text-zinc-500'"
-                  >· {{ optionDetail(candidate) }}</span
+                  >{{ $t("chars.middot") }} {{ optionDetail(candidate) }}</span
                 >
                 <span
                   v-if="candidate.versionId === newestVersionId"
                   :class="active ? 'text-blue-100' : 'text-zinc-500'"
-                  >({{
-                    $t("library.admin.import.version.updateBase.newest")
-                  }})</span
+                  >{{
+                    $t("chars.parenthesized", [
+                      $t("library.admin.import.version.updateBase.newest"),
+                    ])
+                  }}</span
                 >
               </span>
               <span
@@ -168,7 +170,7 @@
                     step.fileCount,
                   )
                 }}<template v-if="step.removedCount > 0">
-                  ·
+                  {{ $t("chars.middot") }}
                   {{
                     $t("library.admin.import.version.updateBase.removed", [
                       step.removedCount,
@@ -206,7 +208,7 @@
                     preview.target.overwritten,
                   ])
                 }}
-                ·
+                {{ $t("chars.middot") }}
                 {{
                   $t("library.admin.import.version.updateBase.added", [
                     preview.target.added,
@@ -239,7 +241,8 @@
           >
           <span class="text-sm text-zinc-100 tabular-nums">
             <template v-if="preview.baseInstallSize !== null"
-              >{{ formatBytes(preview.baseInstallSize) }} ·
+              >{{ formatBytes(preview.baseInstallSize) }}
+              {{ $t("chars.middot") }}
             </template>
             {{
               $t(

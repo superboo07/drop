@@ -2,7 +2,7 @@
   <div class="flex flex-col">
     <div class="flex items-end justify-between">
       <label :for="id" class="block text-sm font-medium text-zinc-100">
-        Patch notes
+        {{ $t("settings.admin.updater.notes.label") }}
       </label>
       <div class="flex gap-1 text-xs">
         <button
@@ -17,7 +17,7 @@
           ]"
           @click="tab = mode"
         >
-          {{ mode }}
+          {{ modeLabels[mode] }}
         </button>
       </div>
     </div>
@@ -26,7 +26,7 @@
       :id="id"
       v-model="model"
       rows="14"
-      placeholder="## What's new&#10;- …"
+      :placeholder="$t('settings.admin.updater.notes.placeholder')"
       class="mt-2 block w-full grow rounded-lg bg-zinc-950 px-4 py-3 font-mono text-sm leading-6 text-zinc-300 ring-1 ring-inset ring-zinc-700 placeholder:text-zinc-600 focus:ring-2 focus:ring-blue-500 focus:outline-none border-0"
     />
     <div
@@ -38,11 +38,12 @@
         class="prose prose-sm prose-invert prose-blue"
         :source="model"
       />
-      <p v-else class="text-sm text-zinc-500">Nothing to preview yet.</p>
+      <p v-else class="text-sm text-zinc-500">
+        {{ $t("settings.admin.updater.notes.nothingToPreview") }}
+      </p>
     </div>
     <p class="mt-2 text-xs text-zinc-500">
-      Markdown. Players see this in the update dialog before they choose to
-      update.
+      {{ $t("settings.admin.updater.notes.hint") }}
     </p>
   </div>
 </template>
@@ -51,4 +52,9 @@
 const model = defineModel<string>({ required: true });
 const id = useId();
 const tab = ref<"Write" | "Preview">("Write");
+const { t } = useI18n();
+const modeLabels = computed(() => ({
+  Write: t("settings.admin.updater.notes.write"),
+  Preview: t("settings.admin.updater.notes.preview"),
+}));
 </script>

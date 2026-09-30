@@ -4,7 +4,6 @@ import clientReleaseManager, {
   clientReleaseArchs,
   clientReleaseBranches,
   clientReleaseTargets,
-  plannedClientReleaseTargets,
   serializeRelease,
 } from "~/server/internal/clientreleases";
 import type {
@@ -32,7 +31,6 @@ export default defineEventHandler(async (h3) => {
             target,
             arch,
             branch: clientReleaseBranches[branch],
-            label: clientReleaseTargets[target].label,
             offered: release ? serializeRelease(release) : null,
           };
         },
@@ -42,7 +40,6 @@ export default defineEventHandler(async (h3) => {
 
   return {
     targets,
-    plannedTargets: plannedClientReleaseTargets,
     releases: releases.map((release) => ({
       ...serializeRelease(release),
       status: clientReleaseManager.status(release, offered),

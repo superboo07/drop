@@ -67,13 +67,13 @@ const navigation: Array<NavigationItem & { icon: Component }> = [
     icon: CodeBracketIcon,
   },
   {
-    label: "Services",
+    label: $t("header.admin.settings.services"),
     route: "/admin/settings/services",
     prefix: "/admin/settings/services",
     icon: ServerStackIcon,
   },
   {
-    label: "Updater",
+    label: $t("header.admin.settings.updater"),
     route: "/admin/settings/updater",
     prefix: "/admin/settings/updater",
     icon: ArrowPathIcon,

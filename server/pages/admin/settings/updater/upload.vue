@@ -5,12 +5,12 @@
       class="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200"
     >
       <ArrowLeftIcon class="size-4" aria-hidden="true" />
-      Client updates
+      {{ $t("settings.admin.updater.title") }}
     </NuxtLink>
     <h2
       class="mt-2 text-xl font-semibold tracking-tight text-zinc-100 sm:text-3xl"
     >
-      Upload release
+      {{ $t("settings.admin.updater.upload.title") }}
     </h2>
 
     <form
@@ -20,9 +20,9 @@
       <div class="flex flex-col gap-6">
         <!-- file -->
         <div>
-          <span class="block text-sm font-medium text-zinc-100"
-            >Build file</span
-          >
+          <span class="block text-sm font-medium text-zinc-100">{{
+            $t("settings.admin.updater.upload.buildFile")
+          }}</span>
           <label
             v-if="!file"
             for="release-file"
@@ -37,11 +37,21 @@
             @drop.prevent="onDrop"
           >
             <CloudArrowUpIcon class="size-8 text-zinc-500" aria-hidden="true" />
-            <span class="text-sm text-zinc-300">
-              Drop a file here or
-              <span class="font-semibold text-blue-400">choose one</span>
+            <i18n-t
+              keypath="settings.admin.updater.upload.dropOrChoose"
+              tag="span"
+              scope="global"
+              class="text-sm text-zinc-300"
+            >
+              <template #choose>
+                <span class="font-semibold text-blue-400">{{
+                  $t("settings.admin.updater.upload.chooseOne")
+                }}</span>
+              </template>
+            </i18n-t>
+            <span class="text-xs text-zinc-500">
+              {{ $t("settings.admin.updater.upload.extensionHint") }}
             </span>
-            <span class="text-xs text-zinc-500">.AppImage for Linux</span>
             <input
               id="release-file"
               type="file"
@@ -65,16 +75,26 @@
                 </div>
                 <div class="text-xs text-zinc-500 tabular-nums">
                   <template v-if="upload">
-                    {{ formatReleaseSize(upload.size) }} · SHA-256
-                    {{ upload.sha256.slice(0, 12) }}…
+                    {{
+                      $t("settings.admin.updater.upload.sizeHash", {
+                        size: formatReleaseSize(upload.size),
+                        hash: $t("chars.truncated", [
+                          upload.sha256.slice(0, 12),
+                        ]),
+                      })
+                    }}
                   </template>
                   <template v-else-if="uploadError">{{ uploadError }}</template>
                   <template v-else-if="progress >= 1">
-                    Checking the file…
+                    {{ $t("settings.admin.updater.upload.checking") }}
                   </template>
                   <template v-else>
-                    {{ formatReleaseSize(file.size * progress) }} of
-                    {{ formatReleaseSize(file.size) }}
+                    {{
+                      $t("settings.admin.updater.upload.progress", {
+                        done: formatReleaseSize(file.size * progress),
+                        total: formatReleaseSize(file.size),
+                      })
+                    }}
                   </template>
                 </div>
               </div>
@@ -89,7 +109,9 @@
                 @click="clearFile"
               >
                 <XMarkIcon class="size-5" aria-hidden="true" />
-                <span class="sr-only">Remove file</span>
+                <span class="sr-only">{{
+                  $t("settings.admin.updater.upload.removeFile")
+                }}</span>
               </button>
             </div>
             <div
@@ -112,23 +134,31 @@
           <label
             for="release-platform"
             class="block text-sm font-medium text-zinc-100"
-            >Platform</label
+            >{{ $t("settings.admin.updater.upload.platform") }}</label
           >
           <select
             id="release-platform"
             v-model="target"
             class="mt-2 block w-full rounded-md border-0 bg-zinc-800 py-2 pl-3 pr-10 text-sm text-zinc-100 ring-1 ring-inset ring-zinc-700 focus:ring-2 focus:ring-blue-500"
           >
-            <option value="linux-appimage">Linux · AppImage</option>
-            <option disabled>Windows · Installer (not supported yet)</option>
+            <option value="linux-appimage">
+              {{ $t("settings.admin.updater.platforms.linuxAppImage") }}
+            </option>
+            <option disabled>
+              {{
+                $t(
+                  "settings.admin.updater.platforms.windowsInstallerUnsupported",
+                )
+              }}
+            </option>
           </select>
         </div>
 
         <!-- arch -->
         <div>
-          <span class="block text-sm font-medium text-zinc-100"
-            >Architecture</span
-          >
+          <span class="block text-sm font-medium text-zinc-100">{{
+            $t("settings.admin.updater.upload.architecture")
+          }}</span>
           <div
             class="mt-2 inline-flex overflow-hidden rounded-md text-sm ring-1 ring-zinc-700"
           >
@@ -149,15 +179,14 @@
             </button>
           </div>
           <p v-if="upload" class="mt-1 text-xs text-zinc-500">
-            Detected from the file: {{ upload.arch }}.
+            {{ $t("settings.admin.updater.upload.detected", [upload.arch]) }}
           </p>
         </div>
 
         <div>
           <UpdaterBranchPicker v-model="branch" />
           <p class="mt-1 text-xs text-zinc-500">
-            Builds whose version contains “.dirty” (made with uncommitted
-            changes) are put on Test automatically.
+            {{ $t("settings.admin.updater.upload.dirtyHint") }}
           </p>
         </div>
 
@@ -166,7 +195,7 @@
           <label
             for="release-tag"
             class="block text-sm font-medium text-zinc-100"
-            >Tag</label
+            >{{ $t("settings.admin.updater.upload.tag") }}</label
           >
           <input
             id="release-tag"
@@ -177,9 +206,7 @@
             class="mt-2 block w-full rounded-md border-0 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 ring-1 ring-inset ring-zinc-700 placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500 tabular-nums"
           />
           <p class="mt-1 text-xs text-zinc-500">
-            Shown to players. It doesn't have to be unique: you can reuse the
-            tag of a withdrawn or deleted build. Every upload gets its own
-            release ID.
+            {{ $t("settings.admin.updater.upload.tagHint") }}
           </p>
         </div>
 
@@ -192,10 +219,11 @@
             class="mt-0.5 size-4 rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
           />
           <label for="release-required" class="text-sm">
-            <span class="font-medium text-zinc-100">Required update</span>
+            <span class="font-medium text-zinc-100">
+              {{ $t("settings.admin.updater.requiredUpdate") }}
+            </span>
             <span class="block text-xs text-zinc-500">
-              Clients can't dismiss the update prompt. Use this when older
-              clients no longer work with the server.
+              {{ $t("settings.admin.updater.upload.requiredHint") }}
             </span>
           </label>
         </div>
@@ -212,7 +240,7 @@
         <NuxtLink
           to="/admin/settings/updater"
           class="rounded-md px-3 py-2 text-sm font-semibold text-zinc-300 hover:bg-zinc-800"
-          >Cancel</NuxtLink
+          >{{ $t("cancel") }}</NuxtLink
         >
         <button
           type="button"
@@ -220,14 +248,14 @@
           class="rounded-md bg-zinc-800 px-3 py-2 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
           @click="() => submit(false)"
         >
-          Save as draft
+          {{ $t("settings.admin.updater.upload.saveDraft") }}
         </button>
         <LoadingButton
           :loading="submitting"
           :disabled="!ready || submitting"
           class="w-fit"
         >
-          Publish {{ tag }}
+          {{ $t("settings.admin.updater.upload.publishTag", [tag]) }}
         </LoadingButton>
       </div>
     </form>
@@ -246,7 +274,9 @@ definePageMeta({
   layout: "admin",
 });
 
-useHead({ title: "Upload release" });
+const { t } = useI18n();
+
+useHead({ title: t("settings.admin.updater.upload.title") });
 
 type UploadResult = {
   uploadId: string;
@@ -321,12 +351,12 @@ function startUpload(picked: File) {
       uploadError.value =
         (body.message as string) ||
         (body.statusMessage as string) ||
-        `Upload failed (HTTP ${xhr.status}).`;
+        t("settings.admin.updater.upload.failedHttp", [xhr.status]);
     }
   };
   xhr.onerror = () => {
     if (request !== xhr) return;
-    uploadError.value = "Upload failed. Check your connection and try again.";
+    uploadError.value = t("settings.admin.updater.upload.failed");
   };
   xhr.send(picked);
 }
@@ -368,9 +398,14 @@ async function submit(publish: boolean) {
     upload.value = undefined; // now owned by the release
     await navigateTo(`/admin/settings/updater/${release.id}`);
   } catch (e) {
+    // h3 errors carry the message here
+    const error = e as
+      | { data?: { message?: string }; statusMessage?: string }
+      | undefined;
     submitError.value =
-      // @ts-expect-error h3 errors carry the message here
-      e?.data?.message ?? e?.statusMessage ?? "Couldn't save the release.";
+      error?.data?.message ??
+      error?.statusMessage ??
+      t("settings.admin.updater.upload.saveFailed");
   } finally {
     submitting.value = false;
   }

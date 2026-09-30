@@ -142,10 +142,11 @@
                       @click="() => openEditModal(version)"
                     >
                       {{ $t("common.edit")
-                      }}<span class="sr-only"
-                        >,
-                        {{ version.displayName ?? version.versionPath }}</span
-                      >
+                      }}<span class="sr-only">{{
+                        $t("chars.srComma", [
+                          version.displayName ?? version.versionPath,
+                        ])
+                      }}</span>
                     </button>
                     <button
                       v-if="version.versionPath !== null"

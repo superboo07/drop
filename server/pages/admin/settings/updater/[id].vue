@@ -5,7 +5,7 @@
       class="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200"
     >
       <ArrowLeftIcon class="size-4" aria-hidden="true" />
-      Client updates
+      {{ $t("settings.admin.updater.title") }}
     </NuxtLink>
 
     <div class="mt-2 flex flex-wrap items-center justify-between gap-4">
@@ -13,19 +13,21 @@
         <h2
           class="text-xl font-semibold tracking-tight text-zinc-100 sm:text-3xl"
         >
-          Drop {{ release.tag }}
+          {{ $t("settings.admin.updater.releaseTitle", [release.tag]) }}
         </h2>
         <span
           class="inline-flex items-center rounded-md bg-blue-400/10 px-2 py-1 text-xs font-medium text-blue-400 ring-1 ring-inset ring-blue-400/20"
         >
-          AppImage · {{ release.arch }}
+          {{
+            $t("settings.admin.updater.platforms.appImageArch", [release.arch])
+          }}
         </span>
         <UpdaterBranchBadge :branch="release.branchSlug" />
         <UpdaterStatusBadge :status="release.status" />
         <span
           v-if="release.required"
           class="inline-flex items-center rounded-md bg-orange-400/10 px-2 py-1 text-xs font-medium text-orange-300 ring-1 ring-inset ring-orange-400/20"
-          >Required</span
+          >{{ $t("settings.admin.updater.required") }}</span
         >
       </div>
       <div class="flex gap-3">
@@ -36,14 +38,14 @@
           class="w-fit"
           @click="() => patch('publish', { publish: true })"
         >
-          Publish
+          {{ $t("settings.admin.updater.detail.publish") }}
         </LoadingButton>
         <a
           :href="`/api/v1/admin/updater/${release.id}/download`"
           class="inline-flex items-center gap-x-2 rounded-md bg-zinc-800 px-3 py-2 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-700"
         >
           <ArrowDownTrayIcon class="size-4" aria-hidden="true" />
-          Download
+          {{ $t("settings.admin.updater.detail.download") }}
         </a>
       </div>
     </div>
@@ -72,7 +74,7 @@
                 class="ml-1 font-sans text-blue-400 hover:text-blue-300"
                 @click="copy(row.value)"
               >
-                Copy
+                {{ $t("settings.admin.updater.detail.copy") }}
               </button>
             </dd>
           </div>
@@ -88,7 +90,7 @@
             <label
               for="release-tag"
               class="block text-sm font-medium text-zinc-100"
-              >Tag</label
+              >{{ $t("settings.admin.updater.upload.tag") }}</label
             >
             <div class="mt-2 flex gap-2">
               <input
@@ -104,17 +106,17 @@
                 class="rounded-md bg-zinc-800 px-3 py-2 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-700 disabled:opacity-50"
                 @click="() => patch('tag', { tag })"
               >
-                Save
+                {{ $t("common.save") }}
               </button>
             </div>
           </div>
           <div class="flex items-start justify-between gap-4">
             <div>
               <div class="text-sm font-medium text-zinc-100">
-                Required update
+                {{ $t("settings.admin.updater.requiredUpdate") }}
               </div>
               <div class="text-xs text-zinc-400">
-                Clients can't dismiss the update prompt for this release.
+                {{ $t("settings.admin.updater.detail.requiredHint") }}
               </div>
             </div>
             <button
@@ -128,7 +130,9 @@
               ]"
               @click="() => patch('required', { required: !release.required })"
             >
-              <span class="sr-only">Required update</span>
+              <span class="sr-only">{{
+                $t("settings.admin.updater.requiredUpdate")
+              }}</span>
               <span
                 :class="[
                   release.required ? 'translate-x-5' : 'translate-x-0',
@@ -149,7 +153,7 @@
           >
             <div>
               <div class="text-sm font-medium text-zinc-100">
-                {{ release.withdrawnAt ? "Restore" : "Withdraw" }}
+                {{ withdrawLabel }}
               </div>
               <div class="text-xs text-zinc-400">
                 {{ withdrawHint }}
@@ -163,15 +167,16 @@
                 () => patch('withdraw', { withdrawn: !release.withdrawnAt })
               "
             >
-              {{ release.withdrawnAt ? "Restore" : "Withdraw" }}
+              {{ withdrawLabel }}
             </button>
           </div>
           <div class="flex items-center justify-between gap-4">
             <div>
-              <div class="text-sm font-medium text-zinc-100">Delete</div>
+              <div class="text-sm font-medium text-zinc-100">
+                {{ $t("common.delete") }}
+              </div>
               <div class="text-xs text-zinc-400">
-                Remove the file and its notes permanently. Clients that already
-                installed it keep working.
+                {{ $t("settings.admin.updater.detail.delete.hint") }}
               </div>
             </div>
             <button
@@ -180,7 +185,7 @@
               class="shrink-0 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
               @click="confirmDelete"
             >
-              Delete
+              {{ $t("common.delete") }}
             </button>
           </div>
         </div>
@@ -196,7 +201,7 @@
               class="rounded-md px-3 py-2 text-sm font-semibold text-zinc-300 hover:bg-zinc-800"
               @click="cancelNotes"
             >
-              Cancel
+              {{ $t("cancel") }}
             </button>
             <LoadingButton
               :loading="busy === 'notes'"
@@ -204,19 +209,21 @@
               class="w-fit"
               @click="saveNotes"
             >
-              Save notes
+              {{ $t("settings.admin.updater.notes.save") }}
             </LoadingButton>
           </div>
         </template>
         <template v-else>
           <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold text-zinc-100">Patch notes</h3>
+            <h3 class="text-sm font-semibold text-zinc-100">
+              {{ $t("settings.admin.updater.notes.label") }}
+            </h3>
             <button
               type="button"
               class="text-sm text-blue-400 hover:text-blue-300"
               @click="editingNotes = true"
             >
-              Edit
+              {{ $t("common.edit") }}
             </button>
           </div>
           <div class="mt-3 rounded-xl bg-zinc-950 p-5 ring-1 ring-zinc-800">
@@ -225,7 +232,9 @@
               class="prose prose-sm prose-invert prose-blue max-w-none"
               :source="release.notes"
             />
-            <p v-else class="text-sm text-zinc-500">No patch notes.</p>
+            <p v-else class="text-sm text-zinc-500">
+              {{ $t("settings.admin.updater.notes.empty") }}
+            </p>
           </div>
         </template>
       </div>
@@ -240,13 +249,16 @@ definePageMeta({
   layout: "admin",
 });
 
+const { t } = useI18n();
 const route = useRoute();
 const id = route.params.id!.toString();
 
 const release = ref(
   await $dropFetch("/api/v1/admin/updater/:id", { params: { id } }),
 );
-useHead({ title: () => `Drop ${release.value.tag}` });
+useHead({
+  title: () => t("settings.admin.updater.releaseTitle", [release.value.tag]),
+});
 
 const tag = ref(release.value.tag);
 const notes = ref(release.value.notes);
@@ -254,48 +266,81 @@ const editingNotes = ref(false);
 const busy = ref<string | undefined>();
 
 const facts = computed(() => [
-  { label: "Release ID", value: release.value.id, mono: true, copy: true },
   {
-    label: "Uploaded",
+    label: t("settings.admin.updater.detail.facts.releaseId"),
+    value: release.value.id,
+    mono: true,
+    copy: true,
+  },
+  {
+    label: t("settings.admin.updater.detail.facts.uploaded"),
     value: formatReleaseDate(release.value.uploadedAt),
   },
   {
-    label: "Published",
+    label: t("settings.admin.updater.detail.facts.published"),
     value: release.value.publishedAt
       ? formatReleaseDate(release.value.publishedAt)
-      : "Not yet (draft)",
+      : t("settings.admin.updater.detail.facts.notYetDraft"),
   },
   ...(release.value.withdrawnAt
     ? [
         {
-          label: "Withdrawn",
+          label: t("settings.admin.updater.detail.facts.withdrawn"),
           value: formatReleaseDate(release.value.withdrawnAt),
         },
       ]
     : []),
   {
-    label: "Uploaded by",
+    label: t("settings.admin.updater.detail.facts.uploadedBy"),
     value:
       release.value.uploader?.displayName ??
       (release.value.uploaderToken
-        ? `API token "${release.value.uploaderToken}"`
-        : "Unknown"),
+        ? t("settings.admin.updater.detail.facts.apiToken", [
+            release.value.uploaderToken,
+          ])
+        : t("settings.admin.updater.detail.facts.unknown")),
   },
-  { label: "File", value: release.value.fileName, mono: true },
-  { label: "Size", value: formatReleaseSize(release.value.size) },
-  { label: "SHA-256", value: release.value.sha256, mono: true, copy: true },
+  {
+    label: t("settings.admin.updater.detail.facts.file"),
+    value: release.value.fileName,
+    mono: true,
+  },
+  {
+    label: t("settings.admin.updater.detail.facts.size"),
+    value: formatReleaseSize(release.value.size),
+  },
+  {
+    label: t("settings.admin.updater.detail.facts.sha256"),
+    value: release.value.sha256,
+    mono: true,
+    copy: true,
+  },
 ]);
+
+const withdrawLabel = computed(() =>
+  release.value.withdrawnAt
+    ? t("settings.admin.updater.detail.restore")
+    : t("settings.admin.updater.detail.withdraw"),
+);
 
 const withdrawHint = computed(() => {
   if (release.value.withdrawnAt)
-    return "Offer this build again. Clients get it if it's the newest published build for its platform.";
+    return t("settings.admin.updater.detail.withdrawHint.restore");
   if (release.value.status !== "offered")
-    return "Stop this build from ever being offered again.";
-  const branchClients =
-    release.value.branchSlug === "test" ? "Test-branch clients" : "Clients";
-  return release.value.fallback
-    ? `Stop offering this build. ${branchClients} get ${release.value.fallback.tag} instead, including ones already on this build.`
-    : `Stop offering this build. Nothing else is published for this platform, so ${branchClients.toLowerCase()} won't be offered anything.`;
+    return t("settings.admin.updater.detail.withdrawHint.neverOffered");
+  const test = release.value.branchSlug === "test";
+  const fallback = release.value.fallback;
+  if (fallback)
+    return test
+      ? t("settings.admin.updater.detail.withdrawHint.fallbackTest", [
+          fallback.tag,
+        ])
+      : t("settings.admin.updater.detail.withdrawHint.fallback", [
+          fallback.tag,
+        ]);
+  return test
+    ? t("settings.admin.updater.detail.withdrawHint.noFallbackTest")
+    : t("settings.admin.updater.detail.withdrawHint.noFallback");
 });
 
 async function refresh() {
@@ -322,7 +367,7 @@ async function patch(
       method: "PATCH",
       params: { id },
       body,
-      failTitle: "Couldn't update the release",
+      failTitle: t("settings.admin.updater.detail.updateFailed"),
     });
     await refresh();
   } catch {
@@ -350,10 +395,11 @@ function confirmDelete() {
   createModal(
     ModalType.Confirmation,
     {
-      title: `Delete Drop ${release.value.tag}?`,
-      description:
-        "The file and its patch notes are removed from the server. This can't be undone. To stop offering it but keep the record, withdraw it instead.",
-      buttonText: "Delete",
+      title: t("settings.admin.updater.detail.delete.confirmTitle", [
+        release.value.tag,
+      ]),
+      description: t("settings.admin.updater.detail.delete.confirmDescription"),
+      buttonText: t("common.delete"),
     },
     async (event, close) => {
       if (event !== "confirm") return close();
@@ -361,7 +407,7 @@ function confirmDelete() {
         await $dropFetch("/api/v1/admin/updater/:id", {
           method: "DELETE",
           params: { id },
-          failTitle: "Couldn't delete the release",
+          failTitle: t("settings.admin.updater.detail.delete.failed"),
         });
       } catch {
         return close();

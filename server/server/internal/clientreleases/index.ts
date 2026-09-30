@@ -64,7 +64,6 @@ export function suggestBranch(name: string): ClientReleaseBranch {
 type TargetInfo = {
   /** Stable id used in URLs and by the desktop client */
   slug: string;
-  label: string;
   /** File extension builds for this target must have */
   extension: string;
 };
@@ -72,13 +71,9 @@ type TargetInfo = {
 export const clientReleaseTargets: Record<ClientReleaseTarget, TargetInfo> = {
   LinuxAppImage: {
     slug: "linux-appimage",
-    label: "Linux · AppImage",
     extension: ".AppImage",
   },
 };
-
-/** Shown on the Updater page as placeholders so the layout has room for them */
-export const plannedClientReleaseTargets = [{ label: "Windows · Installer" }];
 
 export function targetFromSlug(slug: string): ClientReleaseTarget | undefined {
   return (

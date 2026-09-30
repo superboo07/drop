@@ -1,6 +1,8 @@
 <template>
   <fieldset>
-    <legend class="block text-sm font-medium text-zinc-100">Branch</legend>
+    <legend class="block text-sm font-medium text-zinc-100">
+      {{ $t("settings.admin.updater.branches.legend") }}
+    </legend>
     <div class="mt-2 grid gap-3 sm:grid-cols-2">
       <label
         v-for="option in options"
@@ -36,16 +38,17 @@
 const model = defineModel<ClientReleaseBranchSlug>({ required: true });
 const name = useId();
 
-const options = [
+const { t } = useI18n();
+const options = computed(() => [
   {
     value: "release" as const,
-    label: "Release",
-    description: "Offered to everyone.",
+    label: t("settings.admin.updater.branches.release.label"),
+    description: t("settings.admin.updater.branches.release.description"),
   },
   {
     value: "test" as const,
-    label: "Test",
-    description: "Only offered to clients on the test branch.",
+    label: t("settings.admin.updater.branches.test.label"),
+    description: t("settings.admin.updater.branches.test.description"),
   },
-];
+]);
 </script>

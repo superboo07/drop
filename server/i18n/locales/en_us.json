@@ -154,7 +154,10 @@
     "arrowBack": "←",
     "arrowDown": "↓",
     "arrowUp": "↑",
-    "srComma": ", {0}"
+    "middot": "·",
+    "parenthesized": "({0})",
+    "srComma": ", {0}",
+    "truncated": "{0}…"
   },
   "common": {
     "add": "Add",
@@ -341,9 +344,11 @@
       "metadata": "Meta",
       "settings": {
         "general": "General Settings",
+        "services": "Services",
         "store": "Store",
         "title": "Settings",
-        "tokens": "API tokens"
+        "tokens": "API tokens",
+        "updater": "Updater"
       },
       "tasks": "Tasks",
       "users": "Users"
@@ -494,6 +499,19 @@
       },
       "libraryHint": "No libraries configured.",
       "libraryHintDocsLink": "What does this mean? {arrow}",
+      "massImport": {
+        "description": "Quickly import a large amount of versions at once.",
+        "displayName": "Display Name",
+        "import": "Import",
+        "setupMode": "Setup Mode",
+        "type": "Type",
+        "warning": {
+          "accept": "Accept",
+          "body": "While it is useful to import a lot of versions at once, this tool is designed for migrating from other projects, rather than building your Drop library from scratch.",
+          "missing": "It is missing functionality present in the normal import wizard.",
+          "title": "This tool is basic."
+        }
+      },
       "massImportTool": "Mass Import Tool",
       "metadata": {
         "companies": {
@@ -723,7 +741,129 @@
         "showGamePanelTextDecoration": "Show title and description on game tiles (default: on)",
         "title": "Store"
       },
-      "title": "Settings"
+      "title": "Settings",
+      "updater": {
+        "branches": {
+          "legend": "Branch",
+          "release": {
+            "description": "Offered to everyone.",
+            "label": "Release"
+          },
+          "test": {
+            "description": "Only offered to clients on the test branch.",
+            "label": "Test"
+          }
+        },
+        "description": "Upload new Drop desktop builds. Clients are offered the newest published build for their platform when they start.",
+        "detail": {
+          "copy": "Copy",
+          "delete": {
+            "confirmDescription": "The file and its patch notes are removed from the server. This can't be undone. To stop offering it but keep the record, withdraw it instead.",
+            "confirmTitle": "Delete Drop {0}?",
+            "failed": "Couldn't delete the release",
+            "hint": "Remove the file and its notes permanently. Clients that already installed it keep working."
+          },
+          "download": "Download",
+          "facts": {
+            "apiToken": "API token \"{0}\"",
+            "file": "File",
+            "notYetDraft": "Not yet (draft)",
+            "published": "Published",
+            "releaseId": "Release ID",
+            "sha256": "SHA-256",
+            "size": "Size",
+            "unknown": "Unknown",
+            "uploaded": "Uploaded",
+            "uploadedBy": "Uploaded by",
+            "withdrawn": "Withdrawn"
+          },
+          "publish": "Publish",
+          "requiredHint": "Clients can't dismiss the update prompt for this release.",
+          "restore": "Restore",
+          "updateFailed": "Couldn't update the release",
+          "withdraw": "Withdraw",
+          "withdrawHint": {
+            "fallback": "Stop offering this build. Clients get {0} instead, including ones already on this build.",
+            "fallbackTest": "Stop offering this build. Test-branch clients get {0} instead, including ones already on this build.",
+            "neverOffered": "Stop this build from ever being offered again.",
+            "noFallback": "Stop offering this build. Nothing else is published for this platform, so clients won't be offered anything.",
+            "noFallbackTest": "Stop offering this build. Nothing else is published for this platform, so test-branch clients won't be offered anything.",
+            "restore": "Offer this build again. Clients get it if it's the newest published build for its platform."
+          }
+        },
+        "notes": {
+          "empty": "No patch notes.",
+          "hint": "Markdown. Players see this in the update dialog before they choose to update.",
+          "label": "Patch notes",
+          "nothingToPreview": "Nothing to preview yet.",
+          "placeholder": "## What's new\n- …",
+          "preview": "Preview",
+          "save": "Save notes",
+          "write": "Write"
+        },
+        "offered": {
+          "hint": "Test-branch clients get the newest build from either branch.",
+          "notSupported": "Not supported yet",
+          "nothingPublished": "Nothing published yet",
+          "published": "Published {0}",
+          "title": "Currently offered to clients"
+        },
+        "pageTitle": "Updater",
+        "platforms": {
+          "appImageArch": "AppImage · {0}",
+          "linuxAppImage": "Linux · AppImage",
+          "targetArch": "{target} · {arch}",
+          "windowsInstaller": "Windows · Installer",
+          "windowsInstallerUnsupported": "Windows · Installer (not supported yet)"
+        },
+        "releaseTitle": "Drop {0}",
+        "required": "Required",
+        "requiredUpdate": "Required update",
+        "status": {
+          "draft": "Draft",
+          "offered": "Offered",
+          "superseded": "Superseded",
+          "withdrawn": "Withdrawn"
+        },
+        "table": {
+          "branch": "Branch",
+          "empty": "No releases yet. Upload a build to start offering updates.",
+          "newestFirst": "newest first",
+          "offeredTo": "to {0}",
+          "open": "Open",
+          "openRelease": "Open {0}",
+          "platform": "Platform",
+          "releaseId": "Release ID",
+          "size": "Size",
+          "status": "Status",
+          "tag": "Tag",
+          "uploaded": "Uploaded"
+        },
+        "title": "Client updates",
+        "upload": {
+          "architecture": "Architecture",
+          "buildFile": "Build file",
+          "checking": "Checking the file…",
+          "chooseOne": "choose one",
+          "detected": "Detected from the file: {0}.",
+          "dirtyHint": "Builds whose version contains “.dirty” (made with uncommitted changes) are put on Test automatically.",
+          "dropOrChoose": "Drop a file here or {choose}",
+          "extensionHint": ".AppImage for Linux",
+          "failed": "Upload failed. Check your connection and try again.",
+          "failedHttp": "Upload failed (HTTP {0}).",
+          "platform": "Platform",
+          "progress": "{done} of {total}",
+          "publishTag": "Publish {0}",
+          "removeFile": "Remove file",
+          "requiredHint": "Clients can't dismiss the update prompt. Use this when older clients no longer work with the server.",
+          "saveDraft": "Save as draft",
+          "saveFailed": "Couldn't save the release.",
+          "sizeHash": "{size} · SHA-256 {hash}",
+          "tag": "Tag",
+          "tagHint": "Shown to players. It doesn't have to be unique: you can reuse the tag of a withdrawn or deleted build. Every upload gets its own release ID.",
+          "title": "Upload release"
+        }
+      }
     }
   },
   "setup": {

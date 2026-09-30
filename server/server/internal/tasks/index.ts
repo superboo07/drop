@@ -318,6 +318,9 @@ class TaskHandler {
       log: task.log,
       progress: task.progress,
       actions: task.actions as TaskActionLink[],
+      // The whole log: replaces whatever the client already had, so a
+      // client re-subscribing after a reconnect doesn't repeat it.
+      reset: true,
     };
     peer.send(JSON.stringify(catchupMessage));
   }

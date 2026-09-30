@@ -18,6 +18,15 @@ function handleUpdateMessage(msg: TaskMessage) {
   Object.assign(state.value, { ...msg, log: state.value.log });
 }
 
+// Subscribes (or, after a reconnect, re-subscribes) to every task a page is
+// watching. The server answers each with a full catch-up that replaces what
+// we had, so nothing missed while the socket was down is lost.
+websocketHandler.onOpen(() => {
+  for (const taskId of taskStates.keys()) {
+    websocketHandler.send(`connect/${taskId}`);
+  }
+});
+
 websocketHandler.listen((message) => {
   try {
     // If it's an object, it's an update message
@@ -73,7 +82,8 @@ export const useTask = (taskId: string): Ref<TaskMessage | undefined> => {
 
   taskStates.set(taskId, ref(undefined));
   console.log("connecting to " + taskId);
-  websocketHandler.send(`connect/${taskId}`);
+  // Not open yet: onOpen subscribes it once it is.
+  if (websocketHandler.connected) websocketHandler.send(`connect/${taskId}`);
   // TODO: this may have changed behavior
   return taskStates.get(taskId) ?? ref(undefined);
 };

@@ -220,10 +220,10 @@
             </button>
           </div>
           <div class="mt-3 rounded-xl bg-zinc-950 p-5 ring-1 ring-zinc-800">
-            <div
+            <MarkdownContent
               v-if="release.notes"
               class="prose prose-sm prose-invert prose-blue max-w-none"
-              v-html="renderedNotes"
+              :source="release.notes"
             />
             <p v-else class="text-sm text-zinc-500">No patch notes.</p>
           </div>
@@ -234,8 +234,6 @@
 </template>
 
 <script setup lang="ts">
-/* eslint-disable vue/no-v-html */
-import { micromark } from "micromark";
 import { ArrowDownTrayIcon, ArrowLeftIcon } from "@heroicons/vue/24/outline";
 
 definePageMeta({
@@ -254,8 +252,6 @@ const tag = ref(release.value.tag);
 const notes = ref(release.value.notes);
 const editingNotes = ref(false);
 const busy = ref<string | undefined>();
-
-const renderedNotes = computed(() => micromark(release.value.notes));
 
 const facts = computed(() => [
   { label: "Release ID", value: release.value.id, mono: true, copy: true },

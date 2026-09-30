@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div
     class="flex grow flex-col gap-y-5 overflow-y-auto bg-zinc-900 px-6 py-6 ring-1 ring-white/10"
@@ -97,9 +96,9 @@
           <h3 class="relative text-sm font-medium text-zinc-100">
             {{ article.title }}
           </h3>
-          <p
+          <MarkdownContent
             class="relative mt-1 text-xs text-zinc-400 line-clamp-2"
-            v-html="formatExcerpt(article.description)"
+            :source="article.description"
           />
           <div
             class="relative mt-2 flex items-center gap-x-2 text-xs text-zinc-500"
@@ -117,7 +116,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { MagnifyingGlassIcon } from "@heroicons/vue/24/solid";
-import { micromark } from "micromark";
 
 const news = useNews();
 if (!news.value) {
@@ -146,11 +144,6 @@ const toggleTag = (tag: string) => {
   } else {
     selectedTags.value.splice(index, 1);
   }
-};
-
-const formatExcerpt = (excerpt: string) => {
-  // Convert markdown to HTML, micromark is safe
-  return micromark(excerpt);
 };
 
 const filteredArticles = computed(() => {

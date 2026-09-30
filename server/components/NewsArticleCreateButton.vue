@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div class="w-full">
     <!-- Create article button - only show for admin users -->
@@ -94,9 +93,9 @@
                 <div
                   class="flex-1 p-4 rounded-md bg-zinc-900 border border-zinc-700 overflow-y-auto"
                 >
-                  <div
+                  <MarkdownContent
                     class="prose prose-invert prose-sm h-full overflow-y-auto"
-                    v-html="markdownPreview"
+                    :source="newArticle.content"
                   />
                 </div>
               </div>
@@ -216,7 +215,6 @@ import {
   XCircleIcon,
   XMarkIcon,
 } from "@heroicons/vue/24/solid";
-import { micromark } from "micromark";
 
 const news = useNews();
 if (!news.value) {
@@ -242,12 +240,6 @@ const isValidArticle = computed(
     newArticle.value.description &&
     newArticle.value.content,
 );
-
-const markdownPreview = computed(() => {
-  // TODO: maybe?? add https://github.com/cure53/DOMPurify
-  // micromark says its safe, but this is straight html we are injecting
-  return micromark(newArticle.value.content);
-});
 
 const file = ref<FileList | undefined>();
 const currentFile = computed(() => file.value?.item(0));

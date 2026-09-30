@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div
     class="mx-auto w-full relative flex flex-col justify-center pt-72 overflow-hidden"
@@ -110,9 +109,9 @@
 
           <div class="space-y-6">
             <div class="bg-zinc-800/50 rounded-xl p-6 backdrop-blur-sm">
-              <div
+              <MarkdownContent
                 class="prose prose-invert prose-blue overflow-y-auto custom-scrollbar max-w-none"
-                v-html="descriptionHTML"
+                :source="game.mDescription ?? ''"
               />
             </div>
           </div>
@@ -129,7 +128,6 @@ import {
   ArrowUpRightIcon,
   ClockIcon,
 } from "@heroicons/vue/20/solid";
-import { micromark } from "micromark";
 
 const { t } = useI18n();
 
@@ -187,9 +185,6 @@ onUnmounted(() => {
 });
 
 // Convert markdown to HTML
-const descriptionHTML = computed(() =>
-  micromark(game.value.mDescription ?? ""),
-);
 
 // const currentImageIndex = ref(0);
 

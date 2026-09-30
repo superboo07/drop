@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div>
     <div v-if="article" class="px-4 sm:px-6 lg:px-8">
@@ -70,9 +69,9 @@
       </div>
 
       <!-- Article content - markdown -->
-      <div
+      <MarkdownContent
         class="mx-auto prose prose-blue prose-invert prose-lg"
-        v-html="renderedContent"
+        :source="article?.content ?? ''"
       />
     </div>
 
@@ -83,7 +82,6 @@
 <script setup lang="ts">
 import { ArrowLeftIcon } from "@heroicons/vue/20/solid";
 import { TrashIcon } from "@heroicons/vue/24/outline";
-import { micromark } from "micromark";
 
 const route = useRoute();
 const currentlyDeleting = ref();
@@ -104,9 +102,6 @@ if (!article.value)
   });
 
 // Render markdown content
-const renderedContent = computed(() => {
-  return micromark(article.value?.content ?? "");
-});
 
 const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString("en-US", {

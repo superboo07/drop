@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div
     class="mx-auto bg-zinc-950 w-full relative flex flex-col justify-center pt-32 xl:pt-24 z-10 overflow-hidden"
@@ -272,9 +271,9 @@
           </div>
 
           <div>
-            <div
+            <MarkdownContent
               class="mt-12 prose prose-invert prose-blue max-w-none"
-              v-html="descriptionHTML"
+              :source="game.mDescription"
             />
           </div>
         </div>
@@ -286,7 +285,6 @@
 <script setup lang="ts">
 import { ArrowTopRightOnSquareIcon } from "@heroicons/vue/24/outline";
 import { StarIcon, ServerIcon, CloudIcon } from "@heroicons/vue/24/solid";
-import { micromark } from "micromark";
 import { formatBytes } from "~/server/internal/utils/files";
 
 const route = useRoute();
@@ -299,8 +297,6 @@ const { game, rating, sizes, platforms } = await $dropFetch(
 );
 
 const isClient = isClientRequest();
-
-const descriptionHTML = micromark(game.mDescription);
 
 // const rating = Math.round(game.mReviewRating * 5);
 const averageRating = Math.round((rating._avg.mReviewRating ?? 0) * 5);

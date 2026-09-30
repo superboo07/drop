@@ -33,11 +33,10 @@
       v-else
       class="mt-2 min-h-[21rem] grow rounded-lg bg-zinc-950 px-4 py-3 ring-1 ring-inset ring-zinc-700"
     >
-      <!-- eslint-disable-next-line vue/no-v-html -->
-      <div
+      <MarkdownContent
         v-if="model"
         class="prose prose-sm prose-invert prose-blue"
-        v-html="rendered"
+        :source="model"
       />
       <p v-else class="text-sm text-zinc-500">Nothing to preview yet.</p>
     </div>
@@ -49,10 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { micromark } from "micromark";
-
 const model = defineModel<string>({ required: true });
 const id = useId();
 const tab = ref<"Write" | "Preview">("Write");
-const rendered = computed(() => micromark(model.value));
 </script>

@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div v-if="game!">
     <div class="grow flex flex-col xl:flex-row gap-y-8">
@@ -277,12 +276,12 @@
               />
             </div>
             <!-- result box -->
-            <div
+            <MarkdownContent
               :class="[
                 mobileShowFinalDescription ? 'block' : 'hidden',
                 'lg:block prose prose-invert prose-blue bg-zinc-950/30 rounded px-4 py-3',
               ]"
-              v-html="descriptionHTML"
+              :source="game.mDescription ?? ''"
             />
           </div>
         </div>
@@ -556,7 +555,6 @@
 import type { GameModel } from "~/prisma/client/models";
 import { AgeRatingOrganization } from "~/prisma/client/enums";
 import { getAvailableRatings } from "~/utils/ageRatings";
-import { micromark } from "micromark";
 import {
   CheckIcon,
   DocumentIcon,
@@ -769,9 +767,6 @@ function coreMetadataUpdate_wrapper() {
     });
 }
 
-const descriptionHTML = computed(() =>
-  micromark(game.value?.mDescription ?? ""),
-);
 const descriptionEditor = ref<HTMLTextAreaElement | undefined>();
 // 0 is not loading
 // 1 is waiting for stop
@@ -789,37 +784,40 @@ let savingTimeout: undefined | NodeJS.Timeout;
 
 type PatchGameBody = Partial<GameModel>;
 
-watch(descriptionHTML, (_v) => {
-  descriptionSaving.value = DescriptionSavingState.Waiting;
-  if (savingTimeout) clearTimeout(savingTimeout);
-  savingTimeout = setTimeout(async () => {
-    try {
-      descriptionSaving.value = DescriptionSavingState.Loading;
-      await $dropFetch(`/api/v1/admin/game/:id`, {
-        method: "PATCH",
-        params: {
-          id: game.value.id,
-        },
-        body: {
-          mDescription: game.value.mDescription,
-        } satisfies PatchGameBody,
-      });
-      descriptionSaving.value = DescriptionSavingState.NotLoading;
-    } catch (e) {
-      createModal(
-        ModalType.Notification,
-        {
-          title: t("errors.game.description.title"),
-          description: t("errors.game.description.description", [
-            (e as H3Error)?.statusMessage ?? t("errors.unknown"),
-          ]),
-          buttonText: t("common.close"),
-        },
-        (e, c) => c(),
-      );
-    }
-  }, 1500);
-});
+watch(
+  () => game.value?.mDescription,
+  () => {
+    descriptionSaving.value = DescriptionSavingState.Waiting;
+    if (savingTimeout) clearTimeout(savingTimeout);
+    savingTimeout = setTimeout(async () => {
+      try {
+        descriptionSaving.value = DescriptionSavingState.Loading;
+        await $dropFetch(`/api/v1/admin/game/:id`, {
+          method: "PATCH",
+          params: {
+            id: game.value.id,
+          },
+          body: {
+            mDescription: game.value.mDescription,
+          } satisfies PatchGameBody,
+        });
+        descriptionSaving.value = DescriptionSavingState.NotLoading;
+      } catch (e) {
+        createModal(
+          ModalType.Notification,
+          {
+            title: t("errors.game.description.title"),
+            description: t("errors.game.description.description", [
+              (e as H3Error)?.statusMessage ?? t("errors.unknown"),
+            ]),
+            buttonText: t("common.close"),
+          },
+          (e, c) => c(),
+        );
+      }
+    }, 1500);
+  },
+);
 
 const validAddCarouselImages = computed(() =>
   game.value.mImageLibraryObjectIds.filter(

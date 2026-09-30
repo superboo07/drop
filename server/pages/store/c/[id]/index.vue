@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div class="w-full overflow-x-hidden">
     <div class="relative overflow-hidden bg-zinc-900">

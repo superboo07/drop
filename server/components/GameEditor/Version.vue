@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div v-if="game && unimportedVersions" class="px-4 sm:px-6 lg:px-8 py-8">
     <div class="sm:flex sm:items-center">

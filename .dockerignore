@@ -20,6 +20,13 @@
 *.AppImage
 /drop-custom.tar.gz
 
+# Generated in the image's own codegen layer
+/server/prisma/client
+/server/server/internal/proto
+
+# Version control: the image build gets its version and git ref as build args
+/.git
+
 # Local-only state: the dev library link and env files with secrets
 **/.data
 **/.env

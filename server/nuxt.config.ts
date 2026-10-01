@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import path from "node:path";
 import module from "node:module";
 import { fileURLToPath } from "node:url";
@@ -28,9 +29,7 @@ const twemojiAssetsPath = path.join(
 const dropVersion = getDropVersion();
 
 // get git ref or supply during build
-const commitHash =
-  process.env.BUILD_GIT_REF ??
-  execSync("git rev-parse --short HEAD").toString().trim();
+const commitHash = process.env.BUILD_GIT_REF || getGitRef();
 
 console.log(`Drop ${dropVersion} #${commitHash}`);
 
@@ -68,7 +67,9 @@ export default defineNuxtConfig({
   },
 
   experimental: {
-    buildCache: true,
+    // Off: a build restored from it renders pages without their main
+    // stylesheet (the renderer's entry list comes out empty)
+    buildCache: false,
     viewTransition: false,
     appManifest: false,
     componentIslands: true,
@@ -79,6 +80,10 @@ export default defineNuxtConfig({
   // },
 
   vite: {
+    build: {
+      // gzips every chunk just to print its size
+      reportCompressedSize: false,
+    },
     plugins: [
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tailwindcss() as any,
@@ -110,6 +115,10 @@ export default defineNuxtConfig({
   },
 
   nitro: {
+    // the build's file listing would gzip every output file for its sizes
+    logging: {
+      compressedSizes: false,
+    },
     minify: true,
     compressPublicAssets: true,
 
@@ -147,18 +156,31 @@ export default defineNuxtConfig({
         base: "./.data/appCache",
       },
     },
+  },
 
-    serverAssets: [
-      {
-        baseName: "twemoji",
-        // get path to twemoji svg assets
-        dir: twemojiAssetsPath,
-      },
-    ],
+  hooks: {
+    // The emoji endpoint reads twemoji's SVGs from the package at runtime.
+    // Nitro only copies the package's JS into the output, so add the SVGs.
+    // (As serverAssets, each SVG was bundled into its own chunk + sourcemap,
+    // which was most of the Nitro build's time.)
+    "nitro:init"(nitro) {
+      nitro.hooks.hook("compiled", async () => {
+        await cp(
+          twemojiAssetsPath,
+          path.join(
+            nitro.options.output.serverDir,
+            "node_modules/@discordapp/twemoji/dist/svg",
+          ),
+          { recursive: true },
+        );
+      });
+    },
   },
 
   typescript: {
-    typeCheck: true,
+    // The image build skips it (see the root Dockerfile): it's one of the
+    // slowest parts of that build, and `pnpm run typecheck` covers it.
+    typeCheck: process.env.DROP_SKIP_TYPECHECK !== "1",
 
     tsConfig: {
       compilerOptions: {
@@ -269,6 +291,19 @@ export default defineNuxtConfig({
     requestSizeLimiter: false,
   },
 });
+
+/**
+ * Gets the git ref of the checkout, for builds that aren't given one
+ * (the image build always passes BUILD_GIT_REF and has no .git)
+ * @returns {string} The short commit hash, or "unknown"
+ */
+function getGitRef(): string {
+  try {
+    return execSync("git rev-parse --short HEAD").toString().trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 /**
  * Gets the drop version from the environment variable or package.json

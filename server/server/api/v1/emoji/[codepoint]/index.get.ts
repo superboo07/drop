@@ -1,4 +1,17 @@
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
 import aclManager from "~/server/internal/acls";
+
+// In the built server this resolves to the copy in .output/server/node_modules,
+// which nuxt.config.ts's "compiled" hook fills with the SVGs
+const twemojiSvgDir = path.join(
+  path.dirname(
+    createRequire(import.meta.url).resolve("@discordapp/twemoji/package.json"),
+  ),
+  "dist",
+  "svg",
+);
 
 export default defineEventHandler(async (h3) => {
   const allowed = await aclManager.hasACL(h3, [
@@ -19,10 +32,13 @@ export default defineEventHandler(async (h3) => {
     });
   }
 
-  // Get the emoji SVG from server assets
-  const asset = await useStorage("assets:twemoji").getItemRaw(
-    `${codepoint}.svg`,
-  );
+  // Twemoji file names are hex codepoints joined by dashes; anything else
+  // (e.g. a path) can't be an emoji
+  const asset = /^[0-9a-f]+(-[0-9a-f]+)*$/.test(codepoint)
+    ? await readFile(path.join(twemojiSvgDir, `${codepoint}.svg`)).catch(
+        () => undefined,
+      )
+    : undefined;
 
   if (!asset) {
     throw createError({

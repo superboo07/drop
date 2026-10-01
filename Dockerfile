@@ -89,20 +89,31 @@ FROM deps AS build-system
 
 ENV NODE_ENV=production
 ENV NUXT_TELEMETRY_DISABLED=1
+## No type checking during nuxt build: it's one of the slowest steps here,
+## and `pnpm run typecheck` already covers it.
+ENV DROP_SKIP_TYPECHECK=1
 
-## add git so drop can determine its git ref at build
-RUN apt-get update && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+## Codegen (Prisma client, protobuf) in its own layer from just its inputs,
+## so it stays cached unless the schema or protos change. The generated dirs
+## are in .dockerignore so the COPY below doesn't overwrite them with the
+## host's copies. `nuxt prepare` from postinstall is skipped: `nuxt build`
+## does the same work again anyway.
+COPY server/prisma.config.ts server/buf.gen.yaml ./server/
+COPY server/prisma ./server/prisma
+COPY torrential/proto ./torrential/proto
+RUN cd server && pnpm exec prisma generate && pnpm exec buf generate
 
 ## rest of project files, over the installed deps (.dockerignore keeps the
-## host's node_modules out)
+## host's node_modules and .git out)
 COPY . .
 
+## The git ref comes from here, not .git (nuxt.config.ts falls back to
+## "unknown" without either)
 ARG BUILD_DROP_VERSION
 ARG BUILD_GIT_REF
 
 ## build
-RUN pnpm run --filter=drop postinstall && pnpm run --filter=drop build
+RUN pnpm run --filter=drop build
 
 
 # create run environment for Drop

@@ -8,14 +8,31 @@ cd "$(dirname "$0")"
 IMAGE_TAG="drop:custom"
 OUTPUT_FILE="drop-custom.tar.gz"
 
-BUILD_DROP_VERSION="$(git describe --tags --always)"
+BUILD_DROP_VERSION="$(git describe --tags --always --dirty)"
 BUILD_GIT_REF="$(git rev-parse HEAD)"
 
-docker build -t "$IMAGE_TAG" \
+# Podman (`docker` in the dev container) builds one stage at a time unless
+# told otherwise; BuildKit already runs independent stages in parallel. Let
+# torrential, the Nuxt build, the audit and the runtime image build at once.
+PARALLEL=()
+if docker --version 2>/dev/null | grep -qi podman; then
+  PARALLEL=(--jobs 0)
+fi
+
+docker build -t "$IMAGE_TAG" "${PARALLEL[@]}" \
   --build-arg BUILD_DROP_VERSION="$BUILD_DROP_VERSION" \
   --build-arg BUILD_GIT_REF="$BUILD_GIT_REF" \
   --build-arg AUDIT_DATE="$(date -u +%F)" \
   .
+
+# Fastest gzip level, on every core when pigz is there: tarfile's own gzip
+# runs at level 9 on one core and took as long as the build itself. The size
+# barely matters, docker load unpacks it all again anyway.
+if command -v pigz >/dev/null; then
+  COMPRESS=(pigz -1)
+else
+  COMPRESS=(gzip -1)
+fi
 
 # `docker save` can't write an unqualified name: podman (which `docker` is in
 # the dev container) qualifies it with a registry (localhost/drop:custom).
@@ -25,7 +42,8 @@ import io, json, sys, tarfile
 
 name, tag = sys.argv[1].split(":")
 src = tarfile.open(fileobj=sys.stdin.buffer, mode="r|")
-dst = tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz")
+# Written uncompressed; the compressor below gzips the stream.
+dst = tarfile.open(fileobj=sys.stdout.buffer, mode="w|", bufsize=1 << 20)
 for member in src:
     data = src.extractfile(member) if member.isfile() else None
     if member.name == "manifest.json":
@@ -42,6 +60,6 @@ for member in src:
     member.size = len(data)
     dst.addfile(member, io.BytesIO(data))
 dst.close()
-' "$IMAGE_TAG" > "$OUTPUT_FILE"
+' "$IMAGE_TAG" | "${COMPRESS[@]}" > "$OUTPUT_FILE"
 
 echo "Built $IMAGE_TAG and saved it to $(pwd)/$OUTPUT_FILE"

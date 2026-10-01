@@ -6,3 +6,5 @@ plugins:
 
 inputs:
   - directory: ../
+    paths:
+      - ../torrential/proto

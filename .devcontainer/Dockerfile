@@ -21,7 +21,8 @@ FROM debian:trixie-slim
 # protobuf-compiler for parity with the root Dockerfile's torrential stage
 # (torrential's build.rs vendors protoc, the server uses buf from npm); python3
 # for node-gyp and the checksum steps below; git so the server can read its git
-# ref (root Dockerfile, build-system stage).
+# ref (root Dockerfile, build-system stage); pigz so build-docker-image.sh
+# compresses the server image on every core.
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 	&& apt-get install -y --no-install-recommends \
 		build-essential \
@@ -35,6 +36,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 		file \
 		xz-utils \
 		unzip \
+		pigz \
 	&& apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Native libraries the crates link against:

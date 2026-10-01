@@ -482,11 +482,19 @@
       },
       "launchRow": {
         "autosuggestHint": "Auto-suggest extensions",
-        "currentDirHint": "The installation directory is set as the current directory when launching. It is not prepended to your command.",
+        "currentDirHint": "The command is relative to the install folder. The game runs from the folder holding its executable unless \"Run from\" below says otherwise.",
         "emulatorHint": "{rom} is replaced with the game's launch command for emulators.",
         "emulatorSelect": "Select new emulator",
         "emulatorTitle": "Emulator",
-        "noEmulatorSelected": "No emulator selected"
+        "noEmulatorSelected": "No emulator selected",
+        "umuIdDesc": "Optional. Proton applies game-specific fixes by this ID; leave empty to launch without them.",
+        "umuIdPlaceholder": "umu-starcitizen",
+        "umuIdTitle": "UMU game ID",
+        "workingDirAuto": "Leave empty to run from the folder holding the executable. Use . for the install folder itself.",
+        "workingDirEmulator": "Automatic: the emulator's folder",
+        "workingDirLabel": "Run from (install_dir)/",
+        "workingDirOverride": "Overrides the automatic folder for this command.",
+        "workingDirPlaceholder": "Automatic: {0}"
       },
       "launchSelector": {
         "description": "Select a launch option as an emulator for your new launch option.",
@@ -630,6 +638,40 @@
         },
         "noSetups": "No setups configured.",
         "noVersions": "You have no versions of this game available.",
+        "proton": {
+          "action": "Proton",
+          "clear": "Clear all",
+          "compatTitle": "Compatibility",
+          "description": "Clients fill these in at install for any setting the player hasn't chosen. Anything left on \"No preference\" uses the client's own default.",
+          "dxvkDesc": "Off uses WineD3D for Direct3D instead (PROTON_USE_WINED3D=1).",
+          "dxvkTitle": "DXVK",
+          "envDesc": "One KEY=value per line.",
+          "envTitle": "Extra environment variables",
+          "esyncDesc": "Off sets PROTON_NO_ESYNC=1.",
+          "esyncTitle": "Esync",
+          "fsyncDesc": "Off sets PROTON_NO_FSYNC=1.",
+          "fsyncTitle": "Fsync",
+          "localeDesc": "Sets the Windows system locale and codepage. Most Japanese visual novels need Japanese.",
+          "localeOther": "Other…",
+          "localeOtherPlaceholder": "e.g. th_TH.UTF-8",
+          "localeTitle": "Locale",
+          "noPreference": "No preference",
+          "noWindows": "No Windows launches",
+          "none": "None set",
+          "off": "Off",
+          "on": "On",
+          "preferredDesc": "Matched by name against the Proton builds each client has installed, so GE-Proton9 matches GE-Proton9-20. Falls back to the client's default when nothing matches.",
+          "preferredPlaceholder": "e.g. GE-Proton9",
+          "preferredTitle": "Preferred Proton",
+          "summaryEnv": "Env vars",
+          "summaryOff": "{0} off",
+          "summaryOn": "{0} on",
+          "summaryWinetricks": "{0} winetricks verbs | {0} winetricks verb | {0} winetricks verbs",
+          "title": "Proton defaults · {0}",
+          "winetricksDesc": "Offered to the player with one click after install. Never installed silently.",
+          "winetricksPlaceholder": "Add a verb, e.g. vcrun2019",
+          "winetricksTitle": "Winetricks components"
+        },
         "replace": {
           "action": "Replace files",
           "noneAvailable": "No staged uploads available",
@@ -643,6 +685,7 @@
           "confirmDescRelated": "This will rescan {0}'s files on disk and update its manifest to match. It's part of an update chain, so these versions will be resynced with it: {1}. Already-downloaded clients won't be affected unless they redownload.",
           "confirmTitle": "Resync version files?"
         },
+        "runsFrom": "Runs from",
         "setupOnly": "Version configured as in setup-only mode.",
         "table": {
           "delta": "Update mode",
@@ -651,6 +694,7 @@
           "launch": "Launch Configurations",
           "name": "Name (ID)",
           "path": "Path",
+          "proton": "Proton defaults",
           "setup": "Setup Configurations"
         },
         "title": "Versions"

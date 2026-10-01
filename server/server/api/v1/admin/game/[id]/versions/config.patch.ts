@@ -23,6 +23,7 @@ const UpdateVersionConfig = type({
     name: "string",
     launch: "string",
     umuId: "string?",
+    workingDirectory: "string?",
     emulatorId: "string?",
     suggestions: "string[]?",
   }).array(),
@@ -30,6 +31,7 @@ const UpdateVersionConfig = type({
   setups: type({
     platform: type.valueOf(Platform),
     launch: "string",
+    workingDirectory: "string?",
   }).array(),
 
   onlySetup: "boolean = false",

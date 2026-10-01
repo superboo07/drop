@@ -25,6 +25,7 @@ pub mod data {
     pub type DownloadType = v1::DownloadType;
     pub type DatabaseApplications = v1::DatabaseApplications;
     pub type UserConfiguration = v1::UserConfiguration;
+    pub type ProtonDefaults = v1::ProtonDefaults;
     pub type PendingPlaytimeSession = v1::PendingPlaytimeSession;
 
     use std::collections::HashMap;
@@ -159,6 +160,28 @@ pub mod data {
 
             pub launches: Vec<LaunchConfiguration>,
             pub setups: Vec<SetupConfiguration>,
+
+            // The server's recommended Proton settings for this version, as
+            // they were when it was installed. Kept so the next update can
+            // tell which settings the player has changed from them.
+            #[serde(default)]
+            pub proton_defaults: Option<ProtonDefaults>,
+        }
+
+        // Every field is optional: None means the server has no preference,
+        // leaving the client's own default (or the player's choice).
+        #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ProtonDefaults {
+            // Matched by prefix against installed Proton display names
+            pub proton_name: Option<String>,
+            pub dxvk: Option<bool>,
+            pub esync: Option<bool>,
+            pub fsync: Option<bool>,
+            pub locale: Option<String>,
+            pub extra_env_vars: Option<String>,
+            #[serde(default)]
+            pub winetricks: Vec<String>,
         }
 
         #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -172,6 +195,11 @@ pub mod data {
             pub umu_id_override: Option<String>,
 
             pub emulator: Option<LaunchConfigurationEmulator>,
+
+            // Folder to run from, relative to the install directory. None
+            // runs from the folder holding the executable.
+            #[serde(default)]
+            pub working_directory: Option<String>,
         }
 
         #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -190,6 +218,8 @@ pub mod data {
         pub struct SetupConfiguration {
             pub command: String,
             pub platform: Platform,
+            #[serde(default)]
+            pub working_directory: Option<String>,
         }
 
         #[derive(Serialize, Deserialize, Clone, Debug)]

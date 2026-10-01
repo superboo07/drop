@@ -2,8 +2,10 @@ use std::sync::nonpoison::Mutex;
 
 use bitcode::{Decode, Encode};
 use database::{
-    DownloadableMetadata, GameDownloadStatus, borrow_db_checked, borrow_db_mut_checked,
-    models::data::{InstalledGameType, UserConfiguration}, platform::Platform,
+    DownloadableMetadata, GameDownloadStatus, ProtonDefaults, borrow_db_checked,
+    borrow_db_mut_checked,
+    models::data::{InstalledGameType, UserConfiguration},
+    platform::Platform,
 };
 use games::{
     collections::collection::Collection,
@@ -274,6 +276,9 @@ pub struct VersionDownloadOption {
     pub platform: Platform,
     size: GameSize,
     required_content: Vec<VersionDownloadOptionRequiredContent>,
+    // Shown in the install dialog; only sent for Windows options
+    #[serde(default)]
+    proton_defaults: Option<ProtonDefaults>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

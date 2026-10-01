@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs::{OpenOptions, create_dir_all},
     io::{self, Read},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::{Command, ExitStatus},
     sync::Arc,
     thread::spawn,
@@ -525,7 +525,7 @@ impl ProcessManager<'_> {
         )?;
         debug!("using process handler {:?}", process_handler.id());
 
-        let (target_command, emulator) = match game_status {
+        let (target_command, emulator, configured_working_dir) = match game_status {
             GameDownloadStatus::Installed {
                 install_type: InstalledGameType::Installed,
                 ..
@@ -540,6 +540,7 @@ impl ProcessManager<'_> {
                 (
                     launch_config.command.clone(),
                     launch_config.emulator.as_ref(),
+                    launch_config.working_directory.clone(),
                 )
             }
             GameDownloadStatus::Installed {
@@ -552,7 +553,11 @@ impl ProcessManager<'_> {
                     .find(|v| v.platform == target_platform)
                     .ok_or(ProcessError::NotInstalled)?;
 
-                (setup_config.command.clone(), None)
+                (
+                    setup_config.command.clone(),
+                    None,
+                    setup_config.working_directory.clone(),
+                )
             }
             _ => unreachable!("Game registered as 'Partially Installed'"),
         };
@@ -817,7 +822,10 @@ impl ProcessManager<'_> {
         // executed (the emulator's, if there is one), not the install
         // root - games/emulators that resolve their own assets relative to
         // their own binary rather than an absolute path expect this.
-        let working_dir = working_dir_override
+        // A directory the server configured for this launch wins over both.
+        let working_dir = configured_working_dir
+            .and_then(|dir| resolve_working_directory(&meta.id, install_dir, &dir))
+            .or(working_dir_override)
             .or_else(|| game_executable_path.parent().map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from(install_dir));
 
@@ -1201,6 +1209,32 @@ fn pid_alive(pid: i32) -> bool {
 // AppImages carry a 3-byte magic ('A', 'I', <type>) right after the
 // standard ELF header. Check that first since it's authoritative, and fall
 // back to the file extension for anything we fail to read (e.g. permissions).
+// Turns a launch's server-configured working directory into a path inside
+// the install directory. The server already refuses anything that would
+// leave it, but this is checked again since the value came over the network.
+// A folder that isn't there falls back to the automatic choice instead of
+// failing the launch, so a typo can't make a game unplayable.
+fn resolve_working_directory(game_id: &str, install_dir: &str, dir: &str) -> Option<PathBuf> {
+    let relative = PathBuf::from(dir.replace('\\', "/"));
+    if !relative
+        .components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+    {
+        warn!("{game_id}: ignoring working directory {dir:?}, it isn't inside the install folder");
+        return None;
+    }
+
+    let path = Path::new(install_dir).join(relative);
+    if !path.is_dir() {
+        warn!(
+            "{game_id}: configured working directory {} doesn't exist, running from the executable's folder",
+            path.display()
+        );
+        return None;
+    }
+    Some(path)
+}
+
 #[cfg(target_os = "linux")]
 fn is_appimage(path: &Path) -> bool {
     if let Ok(mut file) = std::fs::File::open(path) {

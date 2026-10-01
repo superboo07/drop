@@ -5,8 +5,8 @@
     class="mt-6"
   >
     <ListboxLabel class="block text-sm/6 font-medium text-white"
-      >Proton override</ListboxLabel
-    >
+      >Proton override<RecommendedBadge :state="recommendation"
+    /></ListboxLabel>
     <div class="relative mt-2">
       <ListboxButton
         class="grid w-full cursor-default grid-cols-1 rounded-md bg-white/5 py-1.5 pr-2 pl-3 text-left text-white outline-1 -outline-offset-1 outline-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 sm:text-sm/6"
@@ -170,6 +170,11 @@ import { ChevronUpDownIcon } from "@heroicons/vue/16/solid";
 import { CheckIcon } from "@heroicons/vue/20/solid";
 import { WrenchIcon } from "@heroicons/vue/24/solid";
 import type { GameVersion } from "~/types";
+import RecommendedBadge from "./RecommendedBadge.vue";
+import {
+  PROTON_DEFAULTS_KEY,
+  protonMatchesName,
+} from "~/composables/proton-defaults";
 
 const model = defineModel<GameVersion["userConfiguration"]>({ required: true });
 
@@ -178,6 +183,18 @@ const protonPaths = await invokeWithTimeout<{
   custom: ProtonPath[];
   default?: string;
 }>("fetch_proton_paths");
+const protonDefaults = inject(PROTON_DEFAULTS_KEY, null);
+
+// Recommended while the selected build is one the server's name matches.
+const recommendation = computed(() => {
+  const name = protonDefaults?.protonName;
+  if (!name) return undefined;
+  return currentProtonPath.value &&
+    protonMatchesName(currentProtonPath.value, name)
+    ? { state: "recommended" as const }
+    : { state: "changed" as const, server: name };
+});
+
 const currentProtonPath = computed(
   () =>
     protonPaths.autodiscovered.find(

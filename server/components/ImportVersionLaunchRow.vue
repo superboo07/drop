@@ -174,6 +174,32 @@
         </div>
       </div>
     </div>
+    <div class="mb-2">
+      <div
+        class="flex w-full rounded-md shadow-sm bg-zinc-950 ring-1 ring-inset ring-zinc-800 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-600"
+      >
+        <label
+          :for="workingDirInputId"
+          class="flex select-none items-center gap-x-0.5 pl-3 text-zinc-500 sm:text-sm whitespace-nowrap"
+        >
+          {{ $t("library.admin.launchRow.workingDirLabel") }}
+        </label>
+        <input
+          :id="workingDirInputId"
+          v-model="launchConfiguration.workingDirectory"
+          type="text"
+          class="block flex-1 min-w-0 border-0 py-1.5 pl-1 bg-transparent text-zinc-100 placeholder:text-zinc-500 focus:ring-0 sm:text-sm sm:leading-6"
+          :placeholder="automaticWorkingDir"
+        />
+      </div>
+      <p class="mt-1 text-xs text-zinc-500">
+        {{
+          launchConfiguration.workingDirectory?.trim()
+            ? $t("library.admin.launchRow.workingDirOverride")
+            : $t("library.admin.launchRow.workingDirAuto")
+        }}
+      </p>
+    </div>
     <SelectorPlatform
       :model-value="launchConfiguration.platform"
       class="mb-2"
@@ -181,6 +207,27 @@
     >
       {{ $t("library.admin.import.version.platform") }}
     </SelectorPlatform>
+    <!-- Setups (the rows without a name) don't go through UMU's game ID -->
+    <div
+      v-if="needsName && launchConfiguration.platform === Platform.Windows"
+      class="mb-2"
+    >
+      <label
+        :for="umuInputId"
+        class="block text-sm font-medium leading-6 text-zinc-100"
+        >{{ $t("library.admin.launchRow.umuIdTitle") }}</label
+      >
+      <p class="text-zinc-400 text-xs">
+        {{ $t("library.admin.launchRow.umuIdDesc") }}
+      </p>
+      <input
+        :id="umuInputId"
+        v-model="launchConfiguration.umuId"
+        type="text"
+        class="mt-2 block w-full rounded-md bg-zinc-950 px-3 py-1.5 text-zinc-100 outline-1 -outline-offset-1 outline-zinc-800 placeholder:text-zinc-500 focus:outline-1 focus:-outline-offset-1 focus:outline-blue-500 sm:text-sm/6"
+        :placeholder="$t('library.admin.launchRow.umuIdPlaceholder')"
+      />
+    </div>
     <div v-if="props.type && props.type === 'Game' && props.allowEmulator">
       <h1 class="block text-sm font-medium leading-6 text-zinc-100">
         {{ $t("library.admin.launchRow.emulatorTitle") }}
@@ -235,12 +282,14 @@ import {
 import { CheckIcon, ChevronUpDownIcon } from "@heroicons/vue/20/solid";
 import { InformationCircleIcon, TrashIcon } from "@heroicons/vue/24/outline";
 import type { EmulatorLaunchObject } from "~/composables/frontend";
-import type { GameType, Platform } from "~/prisma/client/enums";
+import { Platform, type GameType } from "~/prisma/client/enums";
 
 import type { ImportVersion } from "~/server/api/v1/admin/import/version/index.post";
 import type { VersionGuess } from "~/server/internal/library";
 
 const launchProcessQuery = ref("");
+const umuInputId = useId();
+const workingDirInputId = useId();
 
 const launchConfiguration = defineModel<
   Omit<(typeof ImportVersion.infer)["launches"][number], "name"> & {
@@ -287,6 +336,28 @@ if (props.type && props.type === "Emulator")
   launchConfiguration.value.suggestions ??= [];
 
 const selectLaunchOpen = ref(false);
+
+const { t } = useI18n();
+
+// What the client picks when no working directory is set: the folder holding
+// the executable it runs, which for an emulated launch is the emulator's.
+const automaticWorkingDir = computed(() => {
+  if (emulator.value) return t("library.admin.launchRow.workingDirEmulator");
+  const executable = parseExecutable(launchConfiguration.value.launch ?? "");
+  const folder = executable.includes("/")
+    ? executable.slice(0, executable.lastIndexOf("/"))
+    : ".";
+  return t("library.admin.launchRow.workingDirPlaceholder", [folder]);
+});
+
+// The executable out of a launch command: the first word that isn't a
+// leading KEY=value env assignment, unquoted.
+function parseExecutable(command: string) {
+  const words = command.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  const executable =
+    words.find((v) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(v)) ?? "";
+  return executable.replace(/^["']|["']$/g, "").replaceAll("\\", "/");
+}
 
 const launchFilteredVersionGuesses = computed(() =>
   props.versionGuesses?.filter((e) =>

@@ -1,5 +1,6 @@
 import { ArkErrors, type } from "arktype";
-import type { Platform } from "~/prisma/client/enums";
+import type { ProtonDefaults } from "~/prisma/client/client";
+import { Platform } from "~/prisma/client/enums";
 import { defineClientEventHandler } from "~/server/internal/clients/event-handler";
 import prisma from "~/server/internal/db/database";
 import type { GameVersionSize } from "~/server/internal/gamesize";
@@ -20,6 +21,9 @@ type VersionDownloadOption = {
     shortDescription: string;
     size: GameVersionSize;
   }>;
+  // Recommended Proton settings, only sent for Windows options since
+  // nothing else runs through Proton
+  protonDefaults?: Omit<ProtonDefaults, "versionId">;
 };
 
 const Query = type({
@@ -73,6 +77,7 @@ export default defineClientEventHandler(async (h3) => {
         },
       },
       setups: true,
+      protonDefaults: { omit: { versionId: true } },
     },
   });
 
@@ -119,6 +124,10 @@ export default defineClientEventHandler(async (h3) => {
                 platform,
                 requiredContent,
                 size: size!,
+                protonDefaults:
+                  platform === Platform.Windows
+                    ? (v.protonDefaults ?? undefined)
+                    : undefined,
               }) satisfies VersionDownloadOption,
           )
           .toArray();

@@ -1,8 +1,8 @@
 <template>
   <Listbox as="div" v-model="model.locale" class="mt-6">
     <ListboxLabel class="block text-sm/6 font-medium text-white"
-      >Locale</ListboxLabel
-    >
+      >Locale<RecommendedBadge :state="recommendation"
+    /></ListboxLabel>
     <div class="relative mt-2">
       <ListboxButton
         class="grid w-full cursor-default grid-cols-1 rounded-md bg-white/5 py-1.5 pr-2 pl-3 text-left text-white outline-1 -outline-offset-1 outline-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-500 sm:text-sm/6"
@@ -128,8 +128,22 @@ import {
 import { ChevronUpDownIcon } from "@heroicons/vue/16/solid";
 import { CheckIcon } from "@heroicons/vue/20/solid";
 import type { GameVersion } from "~/types";
+import RecommendedBadge from "./RecommendedBadge.vue";
+import {
+  PROTON_DEFAULTS_KEY,
+  recommendationState,
+} from "~/composables/proton-defaults";
 
 const model = defineModel<GameVersion["userConfiguration"]>({ required: true });
+
+const protonDefaults = inject(PROTON_DEFAULTS_KEY, null);
+const recommendation = computed(() =>
+  recommendationState<string | null>(
+    protonDefaults?.locale,
+    model.value.locale,
+    (v) => v ?? "",
+  ),
+);
 
 // Locales games are commonly region-locked to, listed first regardless of
 // whether the host has them generated.

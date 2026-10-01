@@ -270,6 +270,39 @@ pub fn install_winetricks_verb(game_id: String, verb: String) -> Result<(), Proc
     run_wine_tool(game_id, "winetricks", &["-q", &verb], &[])
 }
 
+// Installs several verbs in one winetricks run, for the server's recommended
+// components.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn install_winetricks_verbs(game_id: String, verbs: Vec<String>) -> Result<(), ProcessError> {
+    let mut args = vec!["-q"];
+    args.extend(verbs.iter().map(String::as_str));
+    run_wine_tool(game_id, "winetricks", &args, &[])
+}
+
+// Verbs winetricks has recorded as installed in this game's prefix. It logs
+// each one to winetricks.log in the Wine prefix, which Proton keeps in a pfx
+// folder inside WINEPREFIX, so both places are checked. Empty when the game
+// hasn't been launched yet.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn fetch_installed_winetricks(game_id: String) -> Vec<String> {
+    let pfx_dir = DATA_ROOT_DIR.join("pfx").join(&game_id);
+    [
+        pfx_dir.join("winetricks.log"),
+        pfx_dir.join("pfx").join("winetricks.log"),
+    ]
+    .iter()
+    .filter_map(|path| std::fs::read_to_string(path).ok())
+    .flat_map(|log| {
+        log.lines()
+            .map(|v| v.trim().to_owned())
+            .filter(|v| !v.is_empty())
+            .collect::<Vec<_>>()
+    })
+    .collect()
+}
+
 #[cfg(target_os = "linux")]
 #[tauri::command]
 pub fn run_winecfg(game_id: String) -> Result<(), ProcessError> {

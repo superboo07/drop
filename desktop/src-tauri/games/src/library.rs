@@ -19,6 +19,7 @@ use tauri::AppHandle;
 use utils::app_emit;
 
 use crate::downloads::drop_data::{DROPDATA_PATH, DropData, InstalledFileRecord, hash_file};
+use crate::proton_defaults::apply_proton_defaults;
 use crate::state::{GameStatusManager, GameStatusWithTransient};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -323,6 +324,7 @@ pub fn get_current_meta(game_id: &String) -> Option<DownloadableMetadata> {
 pub async fn on_game_complete(
     meta: &DownloadableMetadata,
     configuration: UserConfiguration,
+    previous_version: Option<String>,
     install_dir: String,
     app_handle: &AppHandle,
 ) -> Result<(), RemoteAccessError> {
@@ -342,9 +344,31 @@ pub async fn on_game_complete(
     }
 
     let mut game_version: GameVersion = response.json().await?;
-    game_version.user_configuration = configuration;
 
     let mut handle = borrow_db_mut_checked();
+
+    // The install dialog always starts from a default configuration, so an
+    // update carries the player's settings over from the version it
+    // replaces instead, keeping only the dialog's update preference.
+    let previous = previous_version
+        .filter(|v| *v != meta.version)
+        .and_then(|v| handle.applications.game_versions.get(&v))
+        .cloned();
+    let mut configuration = match &previous {
+        Some(previous) => UserConfiguration {
+            enable_updates: configuration.enable_updates,
+            ..previous.user_configuration.clone()
+        },
+        None => configuration,
+    };
+    apply_proton_defaults(
+        &handle,
+        &mut configuration,
+        previous.as_ref().and_then(|v| v.proton_defaults.as_ref()),
+        game_version.proton_defaults.as_ref(),
+    );
+    game_version.user_configuration = configuration;
+
     handle
         .applications
         .game_versions

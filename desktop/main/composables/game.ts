@@ -4,6 +4,7 @@ import type {
   GameStatus,
   GameStatusEnum,
   GameVersion,
+  ProtonDefaults,
   RawGameStatus,
 } from "~/types";
 
@@ -88,6 +89,7 @@ export type VersionOption = {
       downloadSize: number;
     };
   }>;
+  protonDefaults?: ProtonDefaults | null;
 };
 
 export type ProtonPath = {

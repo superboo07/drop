@@ -71,6 +71,8 @@ export function buildLaunchCreateData(
       ? { emulatorId: v.emulatorId }
       : undefined),
     emulatorSuggestions: gameType === "Emulator" ? (v.suggestions ?? []) : [],
+    umuIdOverride: v.umuId?.trim() || null,
+    workingDirectory: normalizeWorkingDirectory(v.workingDirectory),
   }));
 }
 
@@ -78,7 +80,31 @@ export function buildSetupCreateData(setups: VersionSetupInput[]) {
   return setups.map((v) => ({
     command: v.launch,
     platform: v.platform,
+    workingDirectory: normalizeWorkingDirectory(v.workingDirectory),
   }));
+}
+
+/**
+ * Cleans up a launch/setup working directory override into a relative,
+ * forward-slashed path. Empty means no override (null); "." is the install
+ * root itself. Throws on anything that would leave the install directory,
+ * so both the server and the client can trust what's stored.
+ */
+export function normalizeWorkingDirectory(dir: string | undefined | null) {
+  const trimmed = dir?.trim().replaceAll("\\", "/");
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/") || /^[a-zA-Z]:/.test(trimmed))
+    throw createError({
+      statusCode: 400,
+      message: `Working directory "${trimmed}" must be relative to the install folder.`,
+    });
+  const parts = trimmed.split("/").filter((v) => v && v !== ".");
+  if (parts.includes(".."))
+    throw createError({
+      statusCode: 400,
+      message: `Working directory "${trimmed}" can't leave the install folder.`,
+    });
+  return parts.length > 0 ? parts.join("/") : ".";
 }
 
 /**
@@ -94,11 +120,14 @@ export async function validateVersionMetadata(
     delta: boolean;
     baseVersionId?: string | null;
     onlySetup: boolean;
-    launches: { platform: Platform }[];
-    setups: { platform: Platform }[];
+    launches: { platform: Platform; workingDirectory?: string }[];
+    setups: { platform: Platform; workingDirectory?: string }[];
   },
   excludeVersionId?: string,
 ) {
+  for (const config of [...metadata.launches, ...metadata.setups])
+    normalizeWorkingDirectory(config.workingDirectory);
+
   if (metadata.delta) {
     if (!metadata.baseVersionId)
       throw createError({

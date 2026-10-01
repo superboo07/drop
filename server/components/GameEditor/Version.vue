@@ -63,6 +63,12 @@
                 >
                   {{ $t("library.admin.version.table.launch") }}
                 </th>
+                <th
+                  scope="col"
+                  class="px-3 py-3 text-left text-xs font-medium tracking-wide text-gray-400 uppercase"
+                >
+                  {{ $t("library.admin.version.table.proton") }}
+                </th>
                 <th scope="col" class="py-3 pr-4 pl-3 sm:pr-0">
                   <span class="sr-only">{{ $t("common.edit") }}</span>
                 </th>
@@ -134,6 +140,27 @@
                       />
                     </ul>
                   </td>
+                  <td class="px-3 py-4 text-sm text-gray-400">
+                    <span
+                      v-if="!hasWindowsLaunch(version)"
+                      class="text-zinc-600 whitespace-nowrap"
+                      >{{ $t("library.admin.version.proton.noWindows") }}</span
+                    >
+                    <div
+                      v-else-if="version.protonDefaults"
+                      class="flex flex-wrap gap-1 max-w-48"
+                    >
+                      <span
+                        v-for="item in protonSummary(version.protonDefaults)"
+                        :key="item"
+                        class="rounded-full bg-blue-600/15 px-2 py-0.5 text-xs text-blue-400 whitespace-nowrap"
+                        >{{ item }}</span
+                      >
+                    </div>
+                    <span v-else class="text-zinc-600 whitespace-nowrap">{{
+                      $t("library.admin.version.proton.none")
+                    }}</span>
+                  </td>
                   <td
                     class="py-4 pr-4 pl-3 text-right text-sm font-medium whitespace-nowrap sm:pr-0 space-x-2"
                   >
@@ -147,6 +174,13 @@
                           version.displayName ?? version.versionPath,
                         ])
                       }}</span>
+                    </button>
+                    <button
+                      class="text-violet-400 hover:text-violet-300 disabled:text-zinc-700"
+                      :disabled="!hasWindowsLaunch(version)"
+                      @click="() => openProtonModal(version)"
+                    >
+                      {{ $t("library.admin.version.proton.action") }}
                     </button>
                     <button
                       v-if="version.versionPath !== null"
@@ -184,6 +218,13 @@
       :game-type="game.type"
       :version="editingVersion"
       :versions="game.versions"
+      @saved="refreshGame"
+    />
+    <GameEditorVersionProtonForm
+      v-if="protonVersion"
+      v-model="showProtonModal"
+      :game-id="game.id"
+      :version="protonVersion"
       @saved="refreshGame"
     />
     <ModalTemplate v-model="showReplaceModal">
@@ -336,6 +377,7 @@ import {
 } from "@headlessui/vue";
 import type { AdminFetchGameType } from "~/server/api/v1/admin/game/[id]/index.get";
 import type { UnimportedVersionInformation } from "~/server/internal/library";
+import { Platform } from "~/prisma/client/enums";
 
 const props = defineProps<{
   unimportedVersions: UnimportedVersionInformation[];
@@ -441,6 +483,52 @@ const editingVersion = ref<VersionType | undefined>();
 function openEditModal(version: VersionType) {
   editingVersion.value = version;
   showEditModal.value = true;
+}
+
+const showProtonModal = ref(false);
+const protonVersion = ref<VersionType | undefined>();
+
+function openProtonModal(version: VersionType) {
+  protonVersion.value = version;
+  showProtonModal.value = true;
+}
+
+// Proton only ever runs Windows launches, so the menu is pointless without one
+function hasWindowsLaunch(version: VersionType) {
+  return (
+    !version.onlySetup &&
+    version.launches.some((l) => l.platform === Platform.Windows)
+  );
+}
+
+function protonSummary(defaults: NonNullable<VersionType["protonDefaults"]>) {
+  const items: string[] = [];
+  if (defaults.protonName) items.push(defaults.protonName);
+  const toggles = [
+    ["DXVK", defaults.dxvk],
+    ["Esync", defaults.esync],
+    ["Fsync", defaults.fsync],
+  ] as const;
+  for (const [name, value] of toggles) {
+    if (value === null) continue;
+    items.push(
+      value
+        ? t("library.admin.version.proton.summaryOn", [name])
+        : t("library.admin.version.proton.summaryOff", [name]),
+    );
+  }
+  if (defaults.locale) items.push(defaults.locale);
+  if (defaults.extraEnvVars)
+    items.push(t("library.admin.version.proton.summaryEnv"));
+  if (defaults.winetricks.length > 0)
+    items.push(
+      t(
+        "library.admin.version.proton.summaryWinetricks",
+        [defaults.winetricks.length],
+        defaults.winetricks.length,
+      ),
+    );
+  return items;
 }
 
 async function refreshGame() {

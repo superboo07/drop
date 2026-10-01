@@ -321,6 +321,8 @@ function buildForm(): VersionForm {
       platform: l.platform,
       emulatorId: l.emulatorId ?? undefined,
       suggestions: l.emulatorSuggestions,
+      umuId: l.umuIdOverride ?? undefined,
+      workingDirectory: l.workingDirectory ?? undefined,
     })),
     emulators: props.version.launches.map((l) =>
       l.emulator
@@ -340,6 +342,7 @@ function buildForm(): VersionForm {
     setups: props.version.setups.map((s) => ({
       launch: s.command,
       platform: s.platform,
+      workingDirectory: s.workingDirectory ?? undefined,
     })),
   };
 }

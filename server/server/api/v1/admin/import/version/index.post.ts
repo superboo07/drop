@@ -18,6 +18,7 @@ export const ImportVersion = type({
     name: "string",
     launch: "string",
     umuId: "string?",
+    workingDirectory: "string?",
     emulatorId: "string?",
     suggestions: "string[]?",
   }).array(),
@@ -25,6 +26,7 @@ export const ImportVersion = type({
   setups: type({
     platform: type.valueOf(Platform),
     launch: "string",
+    workingDirectory: "string?",
   }).array(),
 
   onlySetup: "boolean = false",

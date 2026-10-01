@@ -1063,6 +1063,7 @@ impl Downloadable for GameDownloadAgent {
         match on_game_complete(
             &self.metadata(),
             self.configuration.clone(),
+            self.dropdata.previously_installed_version.clone(),
             self.dropdata.base_path.to_string_lossy().to_string(),
             app_handle,
         )

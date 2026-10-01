@@ -88,6 +88,7 @@ import Proton from "./GameOptions/Proton.vue";
 import Translator from "./GameOptions/Translator.vue";
 import { ArrowPathIcon } from "@heroicons/vue/24/solid";
 import type { GameVersion } from "~/types";
+import { PROTON_DEFAULTS_KEY } from "~/composables/proton-defaults";
 
 const appState = useAppState();
 const protonLogoSrc =
@@ -98,6 +99,8 @@ const props = defineProps<{ gameId: string }>();
 const game = await useGame(props.gameId);
 
 const configuration: Ref<GameVersion["userConfiguration"]> = ref(game.version.value!.userConfiguration);
+
+provide(PROTON_DEFAULTS_KEY, game.version.value!.protonDefaults ?? null);
 
 const hasWindows = !!(
   game.version.value!.setups.find((v) => v.platform === "Windows") ??

@@ -417,6 +417,27 @@
           </p>
         </div>
         <div
+          v-if="protonSummary"
+          class="flex gap-x-3 rounded-md bg-blue-900/20 p-3 outline outline-1 outline-blue-500/30"
+        >
+          <InformationCircleIcon
+            class="size-5 flex-shrink-0 text-blue-400"
+            aria-hidden="true"
+          />
+          <div>
+            <p class="text-sm font-medium text-zinc-100">
+              Your server recommends Proton settings for this version
+            </p>
+            <ul class="mt-1 list-disc pl-4 text-xs text-zinc-300 space-y-0.5">
+              <li v-for="line in protonSummary" :key="line">{{ line }}</li>
+            </ul>
+            <p class="mt-1.5 text-xs text-zinc-400">
+              Applied where you haven't chosen something yourself. You can
+              change any of them later in the game's options.
+            </p>
+          </div>
+        </div>
+        <div
           v-if="
             currentVersionOption?.requiredContent &&
             currentVersionOption.requiredContent.length > 0
@@ -689,6 +710,8 @@ import {
 } from "@heroicons/vue/24/solid";
 import { micromark } from "micromark";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { platform } from "@tauri-apps/plugin-os";
+import { matchProtonName } from "~/composables/proton-defaults";
 import { InstalledType, type EmulatorOverride, type Settings } from "~/types";
 
 const route = useRoute();
@@ -819,6 +842,50 @@ async function install() {
 const currentVersionOption = computed(
   () => versionOptions.value?.[Math.max(installVersionIndex.value, 0)],
 );
+
+// Proton only runs Windows games on Linux, so elsewhere there's nothing to
+// apply. The preferred Proton is shown as the build it will be filled in as.
+const protonMatch = ref<{ name: string } | undefined>();
+watch(
+  () => currentVersionOption.value?.protonDefaults?.protonName,
+  async (name) => {
+    protonMatch.value = name ? await matchProtonName(name) : undefined;
+  },
+  { immediate: true },
+);
+const protonSummary = computed(() => {
+  const defaults = currentVersionOption.value?.protonDefaults;
+  if (!defaults || platform() !== "linux") return undefined;
+
+  const lines: string[] = [];
+  if (defaults.protonName)
+    lines.push(
+      protonMatch.value
+        ? `Proton: ${protonMatch.value.name} (matched ${defaults.protonName})`
+        : `Proton: ${defaults.protonName} not found, using your default Proton`,
+    );
+  const toggles = (
+    [
+      ["DXVK", defaults.dxvk],
+      ["Esync", defaults.esync],
+      ["Fsync", defaults.fsync],
+    ] as const
+  )
+    .filter(([, on]) => on !== null)
+    .map(([name, on]) => `${name} ${on ? "on" : "off"}`);
+  if (toggles.length > 0) lines.push(toggles.join(" · "));
+  if (defaults.locale) lines.push(`Locale: ${defaults.locale}`);
+  const envCount = (defaults.extraEnvVars ?? "")
+    .split("\n")
+    .filter((v) => v.trim() && !v.trim().startsWith("#")).length;
+  if (envCount > 0)
+    lines.push(
+      `${envCount} environment variable${envCount === 1 ? "" : "s"}`,
+    );
+  if (defaults.winetricks.length > 0)
+    lines.push(`Suggests installing: ${defaults.winetricks.join(", ")}`);
+  return lines.length > 0 ? lines : undefined;
+});
 
 // A game that runs through an emulator starts on the install directory set
 // for that emulator in Settings > Emulators, if it's still an install

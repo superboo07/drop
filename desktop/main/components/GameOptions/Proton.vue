@@ -1,5 +1,21 @@
 <template>
   <div class="space-y-8">
+    <div
+      v-if="protonDefaults"
+      class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-blue-900/20 px-3 py-2 outline outline-1 outline-blue-500/30"
+    >
+      <p class="text-sm text-zinc-300">
+        Your server recommends Proton settings for this version.
+      </p>
+      <button
+        type="button"
+        class="text-sm font-medium text-blue-400 hover:text-blue-300"
+        @click="() => resetAll()"
+      >
+        Reset all to recommended
+      </button>
+    </div>
+
     <div>
       <h3 class="text-sm font-medium leading-6 text-zinc-100">
         Compatibility
@@ -17,6 +33,7 @@
           <div>
             <h4 class="text-sm font-medium leading-6 text-zinc-100">
               {{ toggle.label }}
+              <RecommendedBadge :state="toggleState(toggle.key)" />
             </h4>
             <p class="mt-1 text-sm leading-6 text-zinc-400">
               {{ toggle.description }}
@@ -43,6 +60,7 @@
     <div>
       <h3 class="text-sm font-medium leading-6 text-zinc-100">
         Extra environment variables
+        <RecommendedBadge :state="envState" />
       </h3>
       <p class="mt-1 text-sm leading-6 text-zinc-400">
         One <code>KEY=value</code> pair per line, passed to Proton/Wine when
@@ -54,6 +72,42 @@
         placeholder="DXVK_HUD=fps&#10;WINEDLLOVERRIDES=dxgi=n"
         class="mt-3 block w-full rounded-md bg-white/5 p-3 font-mono text-sm text-white outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-blue-500"
       />
+    </div>
+
+    <div v-if="recommendedVerbs.length > 0">
+      <h3 class="text-sm font-medium leading-6 text-zinc-100">
+        Recommended components
+      </h3>
+      <p class="mt-1 text-sm leading-6 text-zinc-400">
+        Your server suggests installing these into this game's Proton prefix
+      </p>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <span
+          v-for="verb in recommendedVerbs"
+          :key="verb"
+          class="inline-flex items-center gap-x-1.5 rounded-md bg-white/5 px-2 py-1 font-mono text-xs text-zinc-200 outline-1 -outline-offset-1 outline-white/10"
+        >
+          {{ verb }}
+          <span v-if="installedVerbs.includes(verb)" class="text-green-500"
+            >✓ installed</span
+          >
+        </span>
+        <button
+          v-if="missingVerbs.length > 0"
+          type="button"
+          class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-500"
+          @click="() => installMissing()"
+        >
+          Install missing
+        </button>
+      </div>
+      <p
+        v-if="recommendedStatus"
+        class="mt-2 text-sm"
+        :class="recommendedError ? 'text-red-500' : 'text-green-500'"
+      >
+        {{ recommendedStatus }}
+      </p>
     </div>
 
     <div>
@@ -143,6 +197,13 @@
 import { Cog6ToothIcon, MagnifyingGlassIcon } from "@heroicons/vue/24/outline";
 import { Switch } from "@headlessui/vue";
 import type { GameVersion } from "~/types";
+import RecommendedBadge from "./RecommendedBadge.vue";
+import {
+  PROTON_DEFAULTS_KEY,
+  disabledFromRecommendation,
+  recommendationState,
+  resetToRecommended,
+} from "~/composables/proton-defaults";
 
 const props = defineProps<{
   gameId: string;
@@ -219,6 +280,67 @@ async function install(verb: string) {
   } catch (error) {
     installError.value = true;
     installStatus.value = (error as unknown as string).toString();
+  }
+}
+
+const protonDefaults = inject(PROTON_DEFAULTS_KEY, null);
+
+const onOff = (disabled: boolean) => (disabled ? "off" : "on");
+
+function toggleState(key: "disableDxvk" | "disableEsync" | "disableFsync") {
+  const recommended = {
+    disableDxvk: protonDefaults?.dxvk,
+    disableEsync: protonDefaults?.esync,
+    disableFsync: protonDefaults?.fsync,
+  }[key];
+  return recommendationState(
+    disabledFromRecommendation(recommended ?? null),
+    model.value[key],
+    onOff,
+  );
+}
+
+const envState = computed(() =>
+  recommendationState(
+    protonDefaults?.extraEnvVars,
+    model.value.extraEnvVars,
+    () => "different variables",
+  ),
+);
+
+async function resetAll() {
+  if (protonDefaults) await resetToRecommended(model.value, protonDefaults);
+}
+
+const recommendedVerbs = protonDefaults?.winetricks ?? [];
+const installedVerbs = ref<string[]>([]);
+const missingVerbs = computed(() =>
+  recommendedVerbs.filter((v) => !installedVerbs.value.includes(v)),
+);
+const recommendedStatus = ref<string | undefined>();
+const recommendedError = ref(false);
+
+if (recommendedVerbs.length > 0)
+  invokeWithTimeout<string[]>("fetch_installed_winetricks", {
+    gameId: props.gameId,
+  })
+    .then((result) => (installedVerbs.value = result))
+    .catch(() => {
+      // Only used to mark installed verbs; installing works without it.
+    });
+
+async function installMissing() {
+  recommendedError.value = false;
+  const verbs = missingVerbs.value;
+  try {
+    await invokeWithTimeout("install_winetricks_verbs", {
+      gameId: props.gameId,
+      verbs,
+    });
+    recommendedStatus.value = `Started installing ${verbs.join(", ")}. Check the game's logs if it doesn't seem to do anything.`;
+  } catch (error) {
+    recommendedError.value = true;
+    recommendedStatus.value = (error as unknown as string).toString();
   }
 }
 

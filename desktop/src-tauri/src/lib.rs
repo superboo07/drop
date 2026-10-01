@@ -293,6 +293,10 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             install_winetricks_verb,
             #[cfg(target_os = "linux")]
+            install_winetricks_verbs,
+            #[cfg(target_os = "linux")]
+            fetch_installed_winetricks,
+            #[cfg(target_os = "linux")]
             list_winetricks_verbs,
             #[cfg(target_os = "linux")]
             run_winecfg,
@@ -307,6 +311,8 @@ pub fn run() {
             ::process::compat::remove_proton_layer,
             #[cfg(target_os = "linux")]
             ::process::compat::set_default,
+            #[cfg(target_os = "linux")]
+            ::process::compat::match_proton_name,
             luna::fetch_luna_status,
             luna::extract_luna_bridge,
             // Client self-update

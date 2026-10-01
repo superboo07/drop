@@ -23,6 +23,12 @@
     >
       <p>{{ props.config.command }}</p>
     </div>
+    <p v-if="props.config.workingDirectory" class="text-xs text-zinc-500">
+      {{ $t("library.admin.version.runsFrom") }}
+      <span class="mono text-zinc-300">{{
+        props.config.workingDirectory
+      }}</span>
+    </p>
     <EmulatorWidget
       v-if="!isSetup(props.config) && props.config.emulator"
       :emulator="{

@@ -9,6 +9,7 @@ crc32fast = "1"
 database = { version = "*", path = "../database" }
 dirs = "6.0.0"
 log = "*"
+keyvalues-parser = "0.2.3"
 serde = { version = "*", features = ["derive"] }
 tauri = "*"
 tauri-plugin-autostart = "*"

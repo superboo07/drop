@@ -140,6 +140,8 @@ model GameVersion {
   launches LaunchConfiguration[]
   setups   SetupConfiguration[]
 
+  protonDefaults ProtonDefaults?
+
   onlySetup Boolean @default(false)
 
   dropletManifest  Json // Results from droplet
@@ -167,6 +169,10 @@ model SetupConfiguration {
 
   platform Platform
 
+  // Folder to run from, relative to the install root. Null leaves it to the
+  // client, which runs from the folder holding the executable.
+  workingDirectory String?
+
   versionId   String
   gameVersion GameVersion @relation(fields: [versionId], references: [versionId], onDelete: Cascade, onUpdate: Cascade)
 }
@@ -188,10 +194,32 @@ model LaunchConfiguration {
   umuIdOverride    String?
   umuStoreOverride String?
 
+  // See SetupConfiguration.workingDirectory
+  workingDirectory String?
+
   versionId   String
   gameVersion GameVersion @relation(fields: [versionId], references: [versionId], onDelete: Cascade, onUpdate: Cascade)
 
   emulations LaunchConfiguration[] @relation("emulator")
+}
+
+// Proton settings an admin recommends for a version. Clients fill these in
+// at install for any setting the player hasn't chosen themselves; a null
+// field means no preference, leaving it to the client's own default.
+model ProtonDefaults {
+  versionId   String      @id
+  gameVersion GameVersion @relation(fields: [versionId], references: [versionId], onDelete: Cascade, onUpdate: Cascade)
+
+  // Matched by name prefix against the Proton builds each client has, since
+  // install paths differ per machine
+  protonName   String?
+  dxvk         Boolean?
+  esync        Boolean?
+  fsync        Boolean?
+  locale       String?
+  extraEnvVars String?
+  // Offered to the player after install, never installed silently
+  winetricks   String[] @default([])
 }
 
 // A save slot for a game

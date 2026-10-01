@@ -1,115 +1,15 @@
 // Linux-only file
 
-use std::{
-    fs::{DirEntry, read_dir, read_to_string},
-    io,
-    path::PathBuf,
-    sync::LazyLock,
-};
+use std::path::PathBuf;
 
+// Discovery lives in the client crate so installs (the games crate) can
+// match Proton builds too.
+pub use client::proton::{
+    ProtonPath, discover_proton_paths, find_proton_by_name, read_proton_path,
+};
 use database::{borrow_db_checked, borrow_db_mut_checked};
 use log::warn;
 use serde::Serialize;
-
-static SEARCH_PATHS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    let mut paths = vec!["/usr/share/steam/compatibilitytools.d/".to_owned()];
-
-    if let Some(home_dir) = std::env::home_dir() {
-        paths.push(
-            home_dir
-                .join(".steam/root/compatibilitytools.d/")
-                .to_string_lossy()
-                .to_string(),
-        );
-    }
-
-    paths
-});
-
-pub fn read_proton_path(proton_path: PathBuf) -> Result<Option<ProtonPath>, io::Error> {
-    let read_dir = read_dir(&proton_path)?
-        .flatten()
-        .collect::<Vec<DirEntry>>();
-    let has_proton_path = read_dir
-        .iter()
-        .find(|v| v.file_name().to_string_lossy() == "proton")
-        .is_some();
-    if !has_proton_path {
-        return Ok(None);
-    };
-
-    let compat_vdf = read_dir
-        .iter()
-        .find(|v| v.file_name().to_string_lossy() == "compatibilitytool.vdf");
-
-    let compat_vdf = match compat_vdf {
-        Some(v) => v,
-        None => return Ok(None),
-    };
-
-    let compat_vdf = read_to_string(compat_vdf.path())?;
-    let compat_vdf = keyvalues_parser::parse(&compat_vdf)
-        .inspect_err(|err| warn!("failed to parse vdf: {:?}", err))
-        .map_err(|err| io::Error::other(err.to_string()))?;
-
-    // Function was made with a lot of trial and error
-    // Not intended to be readable
-    let get_display_name = || -> Option<String> {
-        let compat_tools = compat_vdf.value.unwrap_obj();
-        let compat_tools = compat_tools.values().next()?.iter().next()?;
-        let compat_tools = compat_tools.get_obj().unwrap();
-        let compat_tools = compat_tools.values().next()?.iter().next()?.get_obj()?;
-        let display_name = compat_tools.get("display_name")?.iter().next()?.get_str()?;
-        Some(display_name.to_string())
-    };
-
-    if let Some(display_name) = get_display_name() {
-        return Ok(Some(ProtonPath {
-            path: proton_path.to_string_lossy().to_string(),
-            name: display_name,
-        }));
-    }
-
-    Ok(None)
-}
-
-pub fn discover_proton_paths() -> Vec<ProtonPath> {
-    let mut results = Vec::new();
-
-    for search_path in &*SEARCH_PATHS {
-        let Ok(potential_dirs) = read_dir(search_path) else {
-            continue;
-        };
-        for proton_path in potential_dirs {
-            // A single unreadable/broken entry (a dangling symlink, a
-            // permissions hiccup, or Steam itself touching this directory
-            // mid-scan) shouldn't abort discovery of every other candidate.
-            let proton_path = match proton_path {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("skipping unreadable proton search entry: {e}");
-                    continue;
-                }
-            };
-            match read_proton_path(proton_path.path()) {
-                Ok(Some(proton)) => results.push(proton),
-                Ok(None) => {}
-                Err(e) => warn!(
-                    "skipping unreadable proton candidate {}: {e}",
-                    proton_path.path().display()
-                ),
-            }
-        }
-    }
-
-    results
-}
-
-#[derive(Serialize)]
-pub struct ProtonPath {
-    pub path: String,
-    pub name: String,
-}
 
 #[derive(Serialize)]
 pub struct ProtonPaths {
@@ -167,9 +67,10 @@ pub async fn remove_proton_layer(index: usize) {
     let deleted = db.applications.additional_proton_paths.try_remove(index);
     if let Some(deleted) = deleted
         && let Some(default_path) = &db.applications.default_proton_path
-        && *default_path == deleted {
-            db.applications.default_proton_path = None;
-        }
+        && *default_path == deleted
+    {
+        db.applications.default_proton_path = None;
+    }
 }
 
 #[tauri::command]
@@ -191,4 +92,11 @@ pub async fn set_default(path: String) -> Result<(), String> {
     db_lock.applications.default_proton_path = Some(path);
 
     Ok(())
+}
+
+// The installed build a server's recommended Proton name would be filled in
+// with, for showing it before install and for resetting to it.
+#[tauri::command]
+pub fn match_proton_name(name: String) -> Option<ProtonPath> {
+    find_proton_by_name(&borrow_db_checked(), &name)
 }

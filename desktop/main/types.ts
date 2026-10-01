@@ -65,6 +65,19 @@ export type GameVersion = {
   };
   setups: Array<{ platform: string }>;
   launches: Array<{ platform: string }>;
+  protonDefaults?: ProtonDefaults | null;
+};
+
+// The server's recommended Proton settings for a version. null on a field
+// means the server has no preference.
+export type ProtonDefaults = {
+  protonName: string | null;
+  dxvk: boolean | null;
+  esync: boolean | null;
+  fsync: boolean | null;
+  locale: string | null;
+  extraEnvVars: string | null;
+  winetricks: string[];
 };
 
 export enum AppStatus {

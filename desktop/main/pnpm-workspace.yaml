@@ -15,3 +15,27 @@ overrides:
   tar@<7.5.7: '>=7.5.7'
   tar@<=7.5.2: '>=7.5.3'
   tar@<=7.5.3: '>=7.5.4'
+
+# Advisories accepted because nothing affected reaches the AppImage (which
+# ships only the static `nuxt generate` output) and no release our
+# dependencies can update to fixes them. Accepted by ID, so any other
+# advisory, against these same packages too, still fails build_appimage.sh's
+# audit. Remove each one once the fix can be reached by updating.
+auditConfig:
+  ignoreGhsas:
+    # node-forge: RSA PKCS#1 v1.5 signature verification. No fixed release
+    # (1.4.0 is affected). Only via listhen, which makes self-signed
+    # certificates for `nuxt dev --https`.
+    - GHSA-86w9-cpqp-85rv
+    # braces: stack exhaustion from deeply nested patterns. No fixed release
+    # (3.0.3 is affected). Only via Tailwind 3's and nitropack's globbing, on
+    # the patterns in our own config.
+    - GHSA-vfj7-8cjw-p6xm
+    # simple-git / @simple-git/argv-parser: fixed in simple-git 4.0.1, but
+    # every stable @nuxt/devtools (3.x, which nuxt 4.6 requires) needs
+    # simple-git ^3. Only used by the DevTools panel in `nuxt dev`. Remove
+    # once nuxt depends on a DevTools without simple-git 3 (4.x drops it).
+    - GHSA-x6jw-m9v5-85vh
+    - GHSA-g4wm-2vf7-vfgr
+    - GHSA-858h-whjf-mvg5
+    - GHSA-v5rq-49vh-5v5c

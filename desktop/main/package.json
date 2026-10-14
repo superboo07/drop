@@ -22,13 +22,13 @@
     "koa": "^2.16.4",
     "markdown-it": "^14.3.2",
     "micromark": "^4.0.3",
-    "nuxt": "^4.5.2",
+    "nuxt": "^4.6.1",
     "scss": "^0.2.4",
     "vue-router": "latest",
     "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
-    "@nuxt/schema": "4.5.2",
+    "@nuxt/schema": "4.6.1",
     "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/typography": "^0.5.20",
     "@types/markdown-it": "^14.2.0",

@@ -1,5 +1,8 @@
 use std::process::Command;
 
+/// The PATH external processes get when Drop itself was started without one.
+const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
 /// Strips the environment variables that AppImage's `AppRun` (and its
 /// gtk-hook) inject so our own bundled webkit2gtk/GTK stack loads correctly.
 /// Those variables have no legitimate purpose for an *external* process
@@ -50,11 +53,22 @@ pub fn sanitize_external_command(command: &mut Command) {
         }
 
         if let Ok(value) = std::env::var("PATH") {
+            // Empty segments go too: they mean the current directory.
             let mut cleaned = value
                 .split(':')
-                .filter(|segment| !segment.starts_with(appdir.as_str()))
+                .filter(|segment| !segment.is_empty() && !segment.starts_with(appdir.as_str()))
                 .collect::<Vec<_>>()
                 .join(":");
+
+            // AppRun prefixes the bundle's dirs to whatever PATH Drop was
+            // started with, and that can be none at all: a Steam shortcut
+            // (DroidDeck's, at least) starts Drop without PATH, so stripping
+            // the bundle's dirs left games no system dirs, and umu-run's
+            // `#!/usr/bin/env python3` failed with "python3: No such file or
+            // directory". Give them the usual system dirs instead.
+            if cleaned.is_empty() {
+                cleaned = DEFAULT_PATH.to_string();
+            }
 
             // Unlike usr/bin (which holds problematic bundled tools like
             // the outdated xdg-open), usr/libexec/drop-tools holds

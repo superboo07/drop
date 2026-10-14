@@ -937,6 +937,26 @@ impl ProcessManager<'_> {
                 command.env("FUSERMOUNT_PROG", fusermount);
             }
 
+            // Without a real DRM render node, Mesa's Vulkan drivers can render
+            // but can't share frames with the X server as DMA-BUFs: the export
+            // fails with ENOTTY and takes the game's X connection with it
+            // (DroidDeck: the window appeared, then "XIO: fatal IO error 25
+            // (Inappropriate ioctl for device)" closed it). Mesa's software
+            // presentation copies frames over shared memory instead. Covers
+            // OpenGL through zink too. A value from the launch options or
+            // Drop's own environment wins.
+            const WSI_DEBUG: &str = "MESA_VK_WSI_DEBUG";
+            if !utils::render_node::has_drm_render_node()
+                && std::env::var_os(WSI_DEBUG).is_none()
+                && !command.get_envs().any(|(key, _)| key == WSI_DEBUG)
+            {
+                info!(
+                    "{}: no DRM render node in /dev/dri, presenting through Mesa's software path ({WSI_DEBUG}=sw)",
+                    meta.id
+                );
+                command.env(WSI_DEBUG, "sw");
+            }
+
             // Separately: if the game itself is an AppImage, it'll also try
             // to FUSE-mount itself once running inside that same
             // container - FUSE isn't reliably usable in there even when

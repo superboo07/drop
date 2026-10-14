@@ -47,6 +47,16 @@ export default defineNuxtConfig({
     "@vueuse/nuxt",
   ],
 
+  // Drop ships its own fonts (public/fonts, declared in assets/core.scss);
+  // without this, @nuxt/fonts looks them up on Google Fonts at build time
+  fonts: {
+    families: [
+      { name: "Inter", provider: "none" },
+      { name: "Motiva Sans", provider: "none" },
+      { name: "Helvetica", provider: "none" },
+    ],
+  },
+
   // Nuxt-only config
   telemetry: false,
   compatibilityDate: "2024-04-03",

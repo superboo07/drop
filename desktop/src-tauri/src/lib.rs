@@ -58,6 +58,7 @@ use url::Url;
 use utils::app_emit;
 
 mod client;
+mod client_logs;
 #[cfg(target_os = "linux")]
 mod client_update;
 #[cfg(not(target_os = "linux"))]
@@ -88,12 +89,13 @@ use settings::*;
 use crate::scheduler::scheduler_task;
 
 async fn setup(handle: AppHandle) -> AppState {
+    client_logs::keep_previous_log();
     let logfile = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new(
             "{d} | {l} | {f}:{L} - {m}{n}",
         )))
         .append(false)
-        .build(DATA_ROOT_DIR.join("./drop.log"))
+        .build(DATA_ROOT_DIR.join(client_logs::DROP_LOG))
         .expect("Failed to setup logfile");
 
     let console = ConsoleAppender::builder()
@@ -123,6 +125,7 @@ async fn setup(handle: AppHandle) -> AppState {
 
     ProcessManagerWrapper::init(handle.clone());
     DownloadManagerWrapper::init(handle.clone());
+    client_logs::init(&handle);
 
     debug!("checking if database is set up");
     let is_set_up = DB.database_is_set_up();
@@ -155,6 +158,10 @@ async fn setup(handle: AppHandle) -> AppState {
 
     // TODO: Account for possible failure
     let (app_status, user) = auth::setup().await;
+
+    if app_status == AppStatus::SignedIn {
+        tauri::async_runtime::spawn(client_logs::send_crash_reports(handle.clone()));
+    }
 
     let db_handle = borrow_db_checked();
     let mut missing_games = Vec::new();
@@ -249,6 +256,7 @@ pub fn run() {
             quit,
             fetch_system_data,
             is_gamescope,
+            client_logs::send_client_logs,
             open_fs,
             log_frontend,
             // User utils
@@ -656,8 +664,14 @@ fn handle_deep_link_url(url: &Url, handle: &AppHandle) {
 
         if launch_options.len() > 1 {
             open_launch_picker_window(handle, &game_id);
-        } else if let Err(e) = ::process::PROCESS_MANAGER.lock().launch_process(game_id, 0) {
-            warn!("Failed to launch game via deep link: {e}");
+        } else {
+            let result = ::process::PROCESS_MANAGER
+                .lock()
+                .launch_process(game_id.clone(), 0);
+            if let Err(e) = result {
+                warn!("Failed to launch game via deep link: {e}");
+                client_logs::report_launch_error(&game_id, &e);
+            }
         }
     } else {
         warn!("unhandled drop:// url: {url}");

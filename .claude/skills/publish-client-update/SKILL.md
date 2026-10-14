@@ -1,6 +1,6 @@
 ---
 name: publish-client-update
-description: Build the desktop client's amd64 and arm64 AppImages from the current tree and upload both to a Drop server's Updater (Admin > Settings > Updater) with their tag, branch (test if dirty, release if clean) and drafted release notes, so clients get offered them. Use when the user asks to publish, ship, upload or release a client build/AppImage/update.
+description: Build the desktop client's amd64 and arm64 AppImages from the current tree and upload both to a Drop server's Updater (Admin > Clients > Updater) with their tag, branch (test if dirty, release if clean) and drafted release notes, so clients get offered them. Use when the user asks to publish, ship, upload or release a client build/AppImage/update.
 argument-hint: "[--draft] [--required]"
 disable-model-invocation: true
 allowed-tools: Bash(bash desktop/build_appimage.sh*), Bash(git status *), Bash(git merge-base *), Bash(node .claude/skills/publish-client-update/publish.mjs *), Bash(git log *), Bash(git show *), Bash(git diff *), Bash(git rev-parse *), Bash(git cat-file *)

@@ -78,8 +78,12 @@ pub fn launch_game(id: String, index: usize) -> Result<LaunchResult, ProcessErro
     let result = {
         let mut process_manager_lock = PROCESS_MANAGER.lock();
 
-        process_manager_lock.launch_process(id, index)
+        process_manager_lock.launch_process(id.clone(), index)
     };
+
+    if let Err(err) = &result {
+        crate::client_logs::report_launch_error(&id, err);
+    }
 
     if let Err(err) = &result
         && let ProcessError::RequiredDependency(game_id, version_id) = err

@@ -202,6 +202,7 @@ import {
   UserGroupIcon,
   RectangleStackIcon,
   DocumentIcon,
+  ComputerDesktopIcon,
 } from "@heroicons/vue/24/outline";
 import type { NavigationItem } from "~/composables/types";
 import { useCurrentNavigationIndex } from "~/composables/current-page-engine";
@@ -241,6 +242,12 @@ const navigation: Array<NavigationItem & { icon: Component }> = [
     route: "/admin/task",
     prefix: "/admin/task",
     icon: RectangleStackIcon,
+  },
+  {
+    label: $t("header.admin.clients.title"),
+    route: "/admin/clients",
+    prefix: "/admin/clients",
+    icon: ComputerDesktopIcon,
   },
   {
     label: $t("header.admin.settings.title"),

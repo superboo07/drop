@@ -11,6 +11,7 @@ export enum InternalClientCapability {
   UserStatus = "userStatus",
   CloudSaves = "cloudSaves",
   TrackPlaytime = "trackPlaytime",
+  ClientLogs = "clientLogs",
 }
 
 export const validCapabilities = Object.values(InternalClientCapability);
@@ -81,6 +82,7 @@ class CapabilityManager {
     [InternalClientCapability.UserStatus]: async () => true, // No requirements for user status
     [InternalClientCapability.CloudSaves]: async () => true, // No requirements for cloud saves
     [InternalClientCapability.TrackPlaytime]: async () => true,
+    [InternalClientCapability.ClientLogs]: async () => true,
   };
 
   async validateCapabilityConfiguration(
@@ -162,6 +164,26 @@ class CapabilityManager {
           data: {
             capabilities: {
               push: ClientCapabilities.TrackPlaytime,
+            },
+          },
+        });
+      },
+      [InternalClientCapability.ClientLogs]: async function () {
+        const currentClient = await prisma.client.findUnique({
+          where: { id: clientId },
+          select: {
+            capabilities: true,
+          },
+        });
+        if (!currentClient) throw new Error("Invalid client ID");
+        if (currentClient.capabilities.includes(ClientCapabilities.ClientLogs))
+          return;
+
+        await prisma.client.updateMany({
+          where: { id: clientId },
+          data: {
+            capabilities: {
+              push: ClientCapabilities.ClientLogs,
             },
           },
         });

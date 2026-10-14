@@ -154,10 +154,85 @@
     "arrowBack": "←",
     "arrowDown": "↓",
     "arrowUp": "↑",
+    "emDash": "—",
     "middot": "·",
     "parenthesized": "({0})",
     "srComma": ", {0}",
     "truncated": "{0}…"
+  },
+  "clients": {
+    "admin": {
+      "logs": {
+        "clients": {
+          "hint": "The latest logs from each client. Select one to only show its logs.",
+          "lastSent": "Last sent {date} · {count} upload | Last sent {date} · {count} uploads",
+          "title": "Clients",
+          "versionArch": "{arch} · {version}"
+        },
+        "description": "Logs sent by desktop clients. A client sends them when a game fails to launch, after a crash, or when someone presses Send logs in the client.",
+        "detail": {
+          "bundle": "Upload",
+          "clipped": "Showing the last {count} lines.",
+          "delete": {
+            "confirmDescription": "The logs are removed from the server. The client keeps its own copy until it is overwritten.",
+            "confirmTitle": "Delete these logs?",
+            "failed": "Failed to delete logs",
+            "hint": "Removes these logs from the server."
+          },
+          "download": "Download .tar.gz",
+          "environment": "Environment at startup",
+          "environmentHint": "What the client was started with. Values in amber differ from a normal desktop start.",
+          "files": "Files in this upload",
+          "game": "Game",
+          "hiddenByFilters": "{count} hidden by filters",
+          "lineCount": "{n} line | {n} lines",
+          "loadFailed": "Couldn't load this file: {0}",
+          "nextError": "Next error",
+          "pageTitle": "{0} logs - Admin",
+          "search": "Search this file",
+          "showAll": "Show all",
+          "titleWithGame": "{client} · {game}",
+          "truncated": "Cut to its last part by the client"
+        },
+        "errors": "{n} error | {n} errors",
+        "fileCount": "· {n} file | · {n} files",
+        "pageTitle": "Client logs - Admin",
+        "search": "Search client, user, game…",
+        "settings": {
+          "autoSend": "Accept logs sent automatically",
+          "autoSendHint": "Clients send logs on their own when a game fails to launch or after a crash. Turn this off to only accept logs someone sent from the client.",
+          "days": "{n} day | {n} days",
+          "failed": "Failed to save log settings",
+          "forever": "Forever",
+          "maxSize": "Largest upload (MB)",
+          "perClient": "Logs kept per client",
+          "perClientHint": "Older ones are deleted when a client sends more. 0 keeps all.",
+          "retention": "Keep logs for",
+          "title": "Collection settings"
+        },
+        "table": {
+          "client": "Client",
+          "empty": "No client has sent logs yet.",
+          "noMatches": "No logs match these filters.",
+          "open": "Open",
+          "problems": "Problems",
+          "reason": "Reason",
+          "received": "Received",
+          "session": "Session",
+          "size": "Size",
+          "user": "User",
+          "version": "Version"
+        },
+        "title": "Logs",
+        "triggers": {
+          "all": "All",
+          "crash": "Crash",
+          "launch": "Launch failed",
+          "manual": "Sent manually"
+        },
+        "warnings": "{n} warning | {n} warnings"
+      }
+    }
   },
   "common": {
     "add": "Add",
@@ -339,6 +414,11 @@
   "header": {
     "admin": {
       "admin": "Admin",
+      "clients": {
+        "logs": "Logs",
+        "title": "Clients",
+        "updater": "Updater"
+      },
       "home": "Home",
       "library": "Library",
       "metadata": "Meta",
@@ -347,8 +427,7 @@
         "services": "Services",
         "store": "Store",
         "title": "Settings",
-        "tokens": "API tokens",
-        "updater": "Updater"
+        "tokens": "API tokens"
       },
       "tasks": "Tasks",
       "users": "Users"
@@ -988,6 +1067,8 @@
       "scheduled": {
         "checkUpdateDescription": "Check if Drop has an update.",
         "checkUpdateName": "Check update.",
+        "cleanupClientLogsDescription": "Deletes client logs older than the retention period set under Admin > Clients > Logs.",
+        "cleanupClientLogsName": "Clean up client logs",
         "cleanupInvitationsDescription": "Cleans up expired invitations from the database to save space.",
         "cleanupInvitationsName": "Clean up invitations",
         "cleanupObjectsDescription": "Detects and deletes unreferenced and unused objects to save space.",

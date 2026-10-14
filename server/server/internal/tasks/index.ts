@@ -10,6 +10,7 @@ import { Writable } from "node:stream";
 
 import cleanupInvites from "./registry/invitations";
 import cleanupSessions from "./registry/sessions";
+import cleanupClientLogs from "./registry/client-logs";
 import checkUpdate from "./registry/update";
 import cleanupObjects from "./registry/objects";
 import checkIntegrity from "./registry/check-integrity";
@@ -56,6 +57,7 @@ class TaskHandler {
   private dailyScheduledTasks: TaskGroup[] = [
     "cleanup:invitations",
     "cleanup:sessions",
+    "cleanup:client-logs",
     "check:update",
   ];
   private weeklyScheduledTasks: TaskGroup[] = ["cleanup:objects"];
@@ -64,6 +66,7 @@ class TaskHandler {
     // register the cleanup invitations task
     this.saveScheduledTask(cleanupInvites);
     this.saveScheduledTask(cleanupSessions);
+    this.saveScheduledTask(cleanupClientLogs);
     this.saveScheduledTask(checkUpdate);
     this.saveScheduledTask(cleanupObjects);
     this.saveScheduledTask(checkIntegrity);

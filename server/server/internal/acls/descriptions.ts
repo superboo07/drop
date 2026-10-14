@@ -124,4 +124,9 @@ export const systemACLDescriptions: ObjectFromList<typeof systemACLs> = {
   "updater:new": "Upload a new desktop client release.",
   "updater:update": "Edit, publish and withdraw desktop client releases.",
   "updater:delete": "Delete a desktop client release.",
+
+  "client-logs:read": "List and download logs sent by desktop clients.",
+  "client-logs:delete": "Delete logs sent by desktop clients.",
+  "client-logs:update":
+    "Change how long client logs are kept and what clients may send.",
 };

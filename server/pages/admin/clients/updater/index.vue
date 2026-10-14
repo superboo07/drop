@@ -14,7 +14,7 @@
         </p>
       </div>
       <NuxtLink
-        to="/admin/settings/updater/upload"
+        to="/admin/clients/updater/upload"
         class="inline-flex items-center gap-x-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
       >
         <CloudArrowUpIcon class="size-5" aria-hidden="true" />
@@ -35,7 +35,7 @@
         :key="`${target.target}/${target.arch}`"
         :to="
           target.offered
-            ? `/admin/settings/updater/${target.offered.id}`
+            ? `/admin/clients/updater/${target.offered.id}`
             : undefined
         "
         :class="[
@@ -130,7 +130,7 @@
               v-for="release in data.releases"
               :key="release.id"
               class="cursor-pointer transition-colors duration-150 hover:bg-zinc-800/50"
-              @click="navigateTo(`/admin/settings/updater/${release.id}`)"
+              @click="navigateTo(`/admin/clients/updater/${release.id}`)"
             >
               <td
                 class="whitespace-nowrap py-4 pl-4 pr-3 font-medium text-zinc-100 sm:pl-6"
@@ -187,7 +187,7 @@
               </td>
               <td class="py-4 pl-3 pr-4 text-right sm:pr-6">
                 <NuxtLink
-                  :to="`/admin/settings/updater/${release.id}`"
+                  :to="`/admin/clients/updater/${release.id}`"
                   class="text-zinc-500 hover:text-zinc-200"
                   @click.stop
                 >

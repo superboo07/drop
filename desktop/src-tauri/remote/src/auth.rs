@@ -130,6 +130,7 @@ pub fn auth_initiate_logic(mode: String) -> Result<String, RemoteAccessError> {
             ("peerAPI".to_owned(), CapabilityConfiguration {}),
             ("cloudSaves".to_owned(), CapabilityConfiguration {}),
             ("trackPlaytime".to_owned(), CapabilityConfiguration {}),
+            ("clientLogs".to_owned(), CapabilityConfiguration {}),
         ]),
         mode,
     };
@@ -205,8 +206,10 @@ pub async fn setup() -> (AppStatus, Option<User>) {
             warn!("Could not cache user object with error {e}");
         }
 
-        if let Err(e) = request_capability("trackPlaytime").await {
-            warn!("failed to request trackPlaytime capability: {e:?}");
+        for capability in ["trackPlaytime", "clientLogs"] {
+            if let Err(e) = request_capability(capability).await {
+                warn!("failed to request {capability} capability: {e:?}");
+            }
         }
 
         return (AppStatus::SignedIn, Some(user_result));

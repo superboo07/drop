@@ -13,6 +13,9 @@ node_modules
 # Logs
 logs
 *.log
+# ...but not the client logs pages and API routes
+!/pages/admin/clients/logs/
+!/server/api/v1/client/logs/
 
 # Misc
 .DS_Store

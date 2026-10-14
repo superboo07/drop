@@ -8,6 +8,9 @@ export const taskGroups = {
   "cleanup:sessions": {
     concurrency: false,
   },
+  "cleanup:client-logs": {
+    concurrency: false,
+  },
   "check:update": {
     concurrency: false,
   },

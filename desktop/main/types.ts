@@ -151,6 +151,7 @@ export type Settings = {
   emulatorOverrides: { [emulatorGameId: string]: EmulatorOverride };
   updateBranch: UpdateBranch;
   checkUpdatesOnStart: boolean;
+  sendLogsAutomatically: boolean;
 };
 
 export type UpdateBranch = "release" | "test";

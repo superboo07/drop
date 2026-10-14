@@ -3,6 +3,7 @@ enum ClientCapabilities {
   UserStatus    @map("userStatus") // this client can report this user's status (playing, online, etc etc)
   CloudSaves    @map("cloudSaves") // ability to save to save slots
   TrackPlaytime @map("trackPlaytime") // ability to track user playtime
+  ClientLogs    @map("clientLogs") // ability to upload its logs for admins to read
 }
 
 // References a device
@@ -20,6 +21,7 @@ model Client {
   lastAccessedSaves SaveSlot[]
   tokens            APIToken[]
   playtimeSessions  PlaytimeSession[]
+  logBundles        ClientLogBundle[]
 }
 
 // What kind of desktop client build a release is. Each target has its own
@@ -41,7 +43,7 @@ enum ClientReleaseArch {
   aarch64
 }
 
-// A desktop client build uploaded through Admin > Settings > Updater. The id
+// A desktop client build uploaded through Admin > Clients > Updater. The id
 // is the release's identity; `tag` is only what people see, and may repeat
 // (e.g. a withdrawn or deleted build re-uploaded under the same tag).
 model ClientRelease {
@@ -70,4 +72,48 @@ model ClientRelease {
 
   @@index([target, arch])
   @@index([sha256])
+}
+
+// Why a client sent a log bundle
+enum ClientLogTrigger {
+  Manual       @map("manual") // someone pressed "Send logs" in the client
+  Crash        @map("crash") // the client panicked; sent on its next start
+  LaunchFailed @map("launch") // a game exited with an error or right after starting
+}
+
+// Logs a desktop client uploaded, browsed in Admin > Clients > Logs. The
+// files themselves live on disk (server/internal/clientlogs); this row holds
+// what the list and detail pages show without reading them.
+model ClientLogBundle {
+  id String @id @default(uuid())
+
+  // Copied rather than only related, so a bundle outlives its client
+  clientId   String?
+  client     Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientName String
+  userName   String
+
+  trigger ClientLogTrigger
+  version String // client version, e.g. "0.4.0-gecbf8566"
+  arch    String // "x86_64", "aarch64"
+  session String // e.g. "gamescope", "KDE (wayland)"
+
+  gameId   String?
+  gameName String?
+
+  // { title, detail?, lastError? } - what went wrong, when the client knows
+  summary     Json?
+  // [[name, value, flagged]] - selected environment variables at startup
+  environment Json  @default("[]")
+  // [{ name, label, path, size, errors, warnings, truncated }], index = file on disk
+  files       Json  @default("[]")
+
+  errors   Int @default(0)
+  warnings Int @default(0)
+  size     Int @default(0) // bytes on disk
+
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+  @@index([clientId])
 }

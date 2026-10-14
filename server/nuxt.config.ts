@@ -108,6 +108,11 @@ export default defineNuxtConfig({
     "/auth/callback/oidc": {
       redirect: "/api/v1/auth/oidc/callback",
     },
+
+    // the Updater moved from Admin > Settings to Admin > Clients
+    "/admin/settings/updater/**": {
+      redirect: "/admin/clients/updater/**",
+    },
   },
 
   devServer: {

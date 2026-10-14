@@ -113,6 +113,10 @@ export const systemACLs = [
   "updater:new",
   "updater:update",
   "updater:delete",
+
+  "client-logs:read",
+  "client-logs:delete",
+  "client-logs:update",
 ] as const;
 const systemACLPrefix = "system:";
 

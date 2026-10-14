@@ -277,6 +277,10 @@ pub mod data {
             // Required updates are shown either way.
             #[serde(default = "default_true")]
             pub check_updates_on_start: bool,
+            // Send logs to the server when a game fails to launch or after a
+            // crash (Settings > Debug). The server can also refuse them.
+            #[serde(default = "default_true")]
+            pub send_logs_automatically: bool,
         }
 
         #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -388,6 +392,7 @@ pub mod data {
                     emulator_overrides: HashMap::new(),
                     update_branch: UpdateBranch::default(),
                     check_updates_on_start: true,
+                    send_logs_automatically: true,
                 }
             }
         }

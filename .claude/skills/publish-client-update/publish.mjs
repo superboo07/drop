@@ -234,7 +234,7 @@ async function upload(config, args) {
       arch: release.arch,
       sha256: release.sha256,
       published: !!release.publishedAt,
-      page: `${config.url}/admin/settings/updater/${release.id}`,
+      page: `${config.url}/admin/clients/updater/${release.id}`,
     });
   }
 

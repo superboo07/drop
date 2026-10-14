@@ -40,7 +40,6 @@
 
 <script setup lang="ts">
 import {
-  ArrowPathIcon,
   BuildingStorefrontIcon,
   CodeBracketIcon,
   ServerIcon,
@@ -71,12 +70,6 @@ const navigation: Array<NavigationItem & { icon: Component }> = [
     route: "/admin/settings/services",
     prefix: "/admin/settings/services",
     icon: ServerStackIcon,
-  },
-  {
-    label: $t("header.admin.settings.updater"),
-    route: "/admin/settings/updater",
-    prefix: "/admin/settings/updater",
-    icon: ArrowPathIcon,
   },
 ];
 

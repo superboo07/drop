@@ -10,6 +10,12 @@ model ApplicationSettings {
     showGamePanelTextDecoration Boolean @default(true)
     serverName String @default("Drop")
     mLogoObjectId String?
+
+    // Admin > Clients > Logs
+    clientLogsAutoSend      Boolean @default(true) // accept bundles a client sends on its own
+    clientLogsRetentionDays Int     @default(30) // 0 = keep forever
+    clientLogsPerClient     Int     @default(20) // newest bundles kept per client
+    clientLogsMaxSizeMB     Int     @default(20)
 }
 
 enum Platform {

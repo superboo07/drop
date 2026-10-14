@@ -1,5 +1,5 @@
 /*
-Desktop client releases uploaded through Admin > Settings > Updater.
+Desktop client releases uploaded through Admin > Clients > Updater.
 
 A release's identity is its UUID; the tag ("0.4.2") is only what people see
 and may repeat, so a withdrawn or deleted build can be re-uploaded under the

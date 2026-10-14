@@ -1,7 +1,7 @@
 <template>
   <div class="w-full">
     <NuxtLink
-      to="/admin/settings/updater"
+      to="/admin/clients/updater"
       class="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200"
     >
       <ArrowLeftIcon class="size-4" aria-hidden="true" />
@@ -413,7 +413,7 @@ function confirmDelete() {
         return close();
       }
       close();
-      await navigateTo("/admin/settings/updater");
+      await navigateTo("/admin/clients/updater");
     },
   );
 }

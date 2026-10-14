@@ -245,6 +245,10 @@ const scheduledTasks: {
     name: t("tasks.admin.scheduled.cleanupSessionsName"),
     description: t("tasks.admin.scheduled.cleanupSessionsDescription"),
   },
+  "cleanup:client-logs": {
+    name: t("tasks.admin.scheduled.cleanupClientLogsName"),
+    description: t("tasks.admin.scheduled.cleanupClientLogsDescription"),
+  },
   "check:update": {
     name: t("tasks.admin.scheduled.checkUpdateName"),
     description: t("tasks.admin.scheduled.checkUpdateDescription"),

@@ -87,7 +87,56 @@
             <DocumentTextIcon class="h-5 w-5" aria-hidden="true" />
             Open Log File
           </button>
+          <button
+            @click="() => sendLogs()"
+            type="button"
+            :disabled="sendState === 'sending' || !clientId || settings.forceOffline"
+            class="inline-flex items-center gap-x-2 rounded-md bg-zinc-800 px-3.5 py-2.5 text-sm font-semibold text-zinc-100 shadow-sm ring-1 ring-zinc-700 hover:bg-zinc-700 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            <PaperAirplaneIcon class="h-5 w-5" aria-hidden="true" />
+            {{ sendState === "sending" ? "Sending…" : "Send Logs to Server" }}
+          </button>
         </div>
+        <div class="flex max-w-3xl items-start justify-between gap-6">
+          <div>
+            <h4 class="text-sm font-medium text-zinc-100">
+              Send logs automatically
+            </h4>
+            <p class="mt-1 text-sm text-zinc-400">
+              When a game fails to launch or Drop crashes, send the logs to
+              your server so its admins can see what went wrong.
+            </p>
+          </div>
+          <Switch
+            v-model="sendAutomatically"
+            :class="[
+              sendAutomatically ? 'bg-blue-600' : 'bg-zinc-700',
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out',
+            ]"
+          >
+            <span class="sr-only">Send logs automatically</span>
+            <span
+              :class="[
+                sendAutomatically ? 'translate-x-5' : 'translate-x-0',
+                'pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              ]"
+            />
+          </Switch>
+        </div>
+
+        <p v-if="settings.forceOffline" class="text-sm text-zinc-400">
+          Drop is in always-offline mode, so no logs are sent.
+        </p>
+        <p
+          v-else-if="sendState === 'sent'"
+          class="text-sm text-green-400"
+        >
+          Logs sent. Your server's admins can read them under Admin › Clients ›
+          Logs.
+        </p>
+        <p v-else-if="sendError" class="text-sm text-red-400">
+          Couldn't send logs: {{ sendError }}
+        </p>
       </div>
     </div>
   </div>
@@ -103,8 +152,11 @@ import {
   FolderIcon,
   CubeIcon,
   DocumentTextIcon,
+  PaperAirplaneIcon,
 } from "@heroicons/vue/24/outline";
 import { open } from "@tauri-apps/plugin-shell";
+import { Switch } from "@headlessui/vue";
+import type { Settings } from "~/types";
 
 const clientId = ref<string | null>(null);
 // "<version>-g<commit>[.dirty]" for AppImage builds - the same string the
@@ -136,6 +188,36 @@ async function openDataDir() {
     await invokeWithTimeout("open_fs", { path: dataDir.value });
   } catch (error) {
     console.error("Failed to open data dir:", error);
+  }
+}
+
+const settings = await invokeWithTimeout<Settings>("fetch_settings");
+const sendAutomatically = ref(settings.sendLogsAutomatically);
+
+watch(sendAutomatically, async (newValue) => {
+  try {
+    await invokeWithTimeout("update_settings", {
+      newSettings: { sendLogsAutomatically: newValue },
+    });
+  } catch (error) {
+    console.error("Failed to update send-logs setting:", error);
+    sendAutomatically.value = !newValue;
+  }
+});
+
+const sendState = ref<"idle" | "sending" | "sent">("idle");
+const sendError = ref<string>();
+
+// Uploads drop.log, the previous run's log and the last game's logs
+async function sendLogs() {
+  sendState.value = "sending";
+  sendError.value = undefined;
+  try {
+    await invokeWithTimeout("send_client_logs", {}, 150_000);
+    sendState.value = "sent";
+  } catch (error) {
+    sendError.value = `${error}`;
+    sendState.value = "idle";
   }
 }
 

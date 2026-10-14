@@ -1,5 +1,5 @@
 //! Self-update for the AppImage build, against releases the server admin
-//! uploads under Admin > Settings > Updater.
+//! uploads under Admin > Clients > Updater.
 //!
 //! A release's identity is its UUID on the server; its tag is only a label and
 //! can repeat. We remember which release we last installed (in

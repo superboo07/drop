@@ -1,7 +1,7 @@
 <template>
   <div class="w-full">
     <NuxtLink
-      to="/admin/settings/updater"
+      to="/admin/clients/updater"
       class="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200"
     >
       <ArrowLeftIcon class="size-4" aria-hidden="true" />
@@ -238,7 +238,7 @@
           {{ submitError }}
         </p>
         <NuxtLink
-          to="/admin/settings/updater"
+          to="/admin/clients/updater"
           class="rounded-md px-3 py-2 text-sm font-semibold text-zinc-300 hover:bg-zinc-800"
           >{{ $t("cancel") }}</NuxtLink
         >
@@ -396,7 +396,7 @@ async function submit(publish: boolean) {
       },
     });
     upload.value = undefined; // now owned by the release
-    await navigateTo(`/admin/settings/updater/${release.id}`);
+    await navigateTo(`/admin/clients/updater/${release.id}`);
   } catch (e) {
     // h3 errors carry the message here
     const error = e as

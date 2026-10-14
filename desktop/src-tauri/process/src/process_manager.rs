@@ -4,7 +4,7 @@ use std::{
     io::{self, Read},
     path::{Component, Path, PathBuf},
     process::{Command, ExitStatus},
-    sync::Arc,
+    sync::{Arc, OnceLock},
     thread::spawn,
     time::{Duration, Instant, SystemTime},
 };
@@ -39,6 +39,9 @@ pub struct RunningProcess {
     handle: Arc<SharedChild>,
     start: SystemTime,
     manually_killed: bool,
+    // The game's stdout and stderr logs, sent to the server when it fails
+    log_path: PathBuf,
+    error_log_path: PathBuf,
     // Instant (monotonic, and on Linux excludes suspended time - see
     // checkpoint_running_sessions) marking the end of the last recorded
     // playtime chunk, paired with the wall-clock time at that same moment
@@ -64,6 +67,23 @@ pub struct ProcessManager<'a> {
     )>,
     app_handle: AppHandle,
 }
+
+/// A game that exited with an error or within a couple of seconds of being
+/// started, or that couldn't be started at all
+pub struct LaunchFailure {
+    pub game_id: String,
+    /// How the game exited, when it got that far
+    pub exit: Option<String>,
+    pub elapsed: Duration,
+    pub log_path: Option<PathBuf>,
+    pub error_log_path: Option<PathBuf>,
+    /// Why it couldn't be started, when it never ran
+    pub error: Option<String>,
+}
+
+/// Called for every failed launch; the app sends the logs to the server
+/// (src/client_logs.rs), which this crate can't depend on.
+pub static LAUNCH_FAILURE_HOOK: OnceLock<fn(LaunchFailure)> = OnceLock::new();
 
 #[derive(Serialize)]
 pub struct LaunchOption {
@@ -248,10 +268,23 @@ impl ProcessManager<'_> {
         // Or if the status isn't 0
         // Or if it's an error
         if !process.manually_killed
-            && (elapsed.as_secs() <= 2 || result.map_or(true, |r| !r.success()))
+            && (elapsed.as_secs() <= 2 || result.as_ref().map_or(true, |r| !r.success()))
         {
             warn!("drop detected that the game {game_id} may have failed to launch properly");
             let _ = self.app_handle.emit("launch_external_error", &game_id);
+            if let Some(hook) = LAUNCH_FAILURE_HOOK.get() {
+                hook(LaunchFailure {
+                    game_id: game_id.clone(),
+                    exit: Some(match &result {
+                        Ok(status) => status.to_string(),
+                        Err(e) => format!("couldn't wait for the game: {e}"),
+                    }),
+                    elapsed,
+                    log_path: Some(process.log_path.clone()),
+                    error_log_path: Some(process.error_log_path.clone()),
+                    error: None,
+                });
+            }
         }
 
         // Record a playtime session for later sync (see PlaytimeSyncer).
@@ -494,27 +527,26 @@ impl ProcessManager<'_> {
         create_dir_all(game_log_folder)?;
 
         let current_time = chrono::offset::Local::now();
+        let log_path =
+            game_log_folder.join(format!("{}-{}.log", meta.version, current_time.timestamp()));
         let log_file = OpenOptions::new()
             .write(true)
             .truncate(true)
             .read(true)
             .create(true)
-            .open(game_log_folder.join(format!(
-                "{}-{}.log",
-                meta.version,
-                current_time.timestamp()
-            )))?;
+            .open(&log_path)?;
 
+        let error_log_path = game_log_folder.join(format!(
+            "{}-{}-error.log",
+            meta.version,
+            current_time.timestamp()
+        ));
         let error_file = OpenOptions::new()
             .write(true)
             .truncate(true)
             .read(true)
             .create(true)
-            .open(game_log_folder.join(format!(
-                "{}-{}-error.log",
-                meta.version,
-                current_time.timestamp()
-            )))?;
+            .open(&error_log_path)?;
 
         let target_platform = meta.target_platform;
 
@@ -976,6 +1008,8 @@ impl ProcessManager<'_> {
                 handle: wait_thread_handle,
                 start: SystemTime::now(),
                 manually_killed: false,
+                log_path,
+                error_log_path,
                 checkpoint: Instant::now(),
                 checkpoint_wall: chrono::Utc::now(),
                 #[cfg(target_os = "linux")]

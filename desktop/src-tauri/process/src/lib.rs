@@ -24,6 +24,8 @@ pub mod luna;
 mod parser;
 pub mod process_handlers;
 pub mod process_manager;
+#[cfg(target_os = "linux")]
+pub mod winetricks;
 
 pub struct ProcessManagerWrapper(OnceLock<Mutex<ProcessManager<'static>>>);
 impl ProcessManagerWrapper {

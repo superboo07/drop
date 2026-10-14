@@ -30,6 +30,7 @@
         <ol class="inline-flex gap-3">
           <HeaderProtonSupportWidget />
           <HeaderClientUpdateWidget />
+          <HeaderWinetricksWidget />
           <HeaderQueueWidget :object="currentQueueObject" />
           <li v-for="(item, itemIdx) in quickActions">
             <HeaderWidget

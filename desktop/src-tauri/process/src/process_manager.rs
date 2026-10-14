@@ -480,6 +480,12 @@ impl ProcessManager<'_> {
             return Err(ProcessError::AlreadyRunning);
         }
 
+        // Winetricks writes the same prefix the game would run in
+        #[cfg(target_os = "linux")]
+        if crate::winetricks::is_running(&game_id) {
+            return Err(ProcessError::PrefixBusy);
+        }
+
         let mut db_lock = borrow_db_mut_checked();
 
         let meta = db_lock
@@ -1190,7 +1196,7 @@ fn kill_process_tree(handle: &SharedChild) -> io::Result<()> {
 // umu-run re-session (setsid) the process tree they spawn, which takes it out
 // of the process group we set on the direct child at launch time.
 #[cfg(target_os = "linux")]
-fn collect_descendant_pids(root_pid: i32) -> Vec<i32> {
+pub(crate) fn collect_descendant_pids(root_pid: i32) -> Vec<i32> {
     use std::fs;
 
     let mut parent_of: HashMap<i32, i32> = HashMap::new();
@@ -1226,7 +1232,7 @@ fn collect_descendant_pids(root_pid: i32) -> Vec<i32> {
 }
 
 #[cfg(unix)]
-fn send_signal_to_all(pids: &[i32], signal: i32) {
+pub(crate) fn send_signal_to_all(pids: &[i32], signal: i32) {
     for &pid in pids {
         // Safety: signalling PIDs we found as descendants of our own tracked
         // child (or the child itself). ESRCH (already gone) is expected and fine.
@@ -1243,7 +1249,7 @@ fn send_signal_to_all(pids: &[i32], signal: i32) {
 // just not yet reaped by their parent) count as dead for our purposes - the
 // game itself has stopped running even if its process table entry lingers.
 #[cfg(target_os = "linux")]
-fn pid_alive(pid: i32) -> bool {
+pub(crate) fn pid_alive(pid: i32) -> bool {
     let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
         return false;
     };
@@ -1256,7 +1262,7 @@ fn pid_alive(pid: i32) -> bool {
 }
 
 #[cfg(all(unix, not(target_os = "linux")))]
-fn pid_alive(pid: i32) -> bool {
+pub(crate) fn pid_alive(pid: i32) -> bool {
     unsafe { libc::kill(pid, 0) == 0 }
 }
 

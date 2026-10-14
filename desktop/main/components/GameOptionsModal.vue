@@ -95,7 +95,7 @@ const protonLogoSrc =
   useRuntimeConfig().app.baseURL.replace(/\/$/, "") + "/proton-logo.png";
 
 const open = defineModel<boolean>();
-const props = defineProps<{ gameId: string }>();
+const props = defineProps<{ gameId: string; initialTab?: string }>();
 const game = await useGame(props.gameId);
 
 const configuration: Ref<GameVersion["userConfiguration"]> = ref(game.version.value!.userConfiguration);
@@ -142,7 +142,16 @@ const tabs: Array<{ name: string; icon: Component; page: Component }> = [
       ]
     : []),
 ];
-const currentTabIndex = ref(0);
+const currentTabIndex = ref(
+  Math.max(
+    0,
+    tabs.findIndex((tab) => tab.name === props.initialTab),
+  ),
+);
+watch(open, (isOpen) => {
+  const index = tabs.findIndex((tab) => tab.name === props.initialTab);
+  if (isOpen && index >= 0) currentTabIndex.value = index;
+});
 
 const saveLoading = ref(false);
 const saveError = ref<undefined | string>();

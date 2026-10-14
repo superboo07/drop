@@ -27,6 +27,7 @@ pub enum ProcessError {
     NestedSession(String),
     EmulatorOverrideMissing(String, String),
     FlatpakMissing(String),
+    PrefixBusy,
 }
 
 impl Display for ProcessError {
@@ -69,6 +70,7 @@ impl Display for ProcessError {
             ProcessError::FlatpakMissing(name) => &format!(
                 "Your own copy of {name} is set to a Flatpak, but Flatpak isn't installed on this machine."
             ),
+            ProcessError::PrefixBusy => "Winetricks is still setting up this game's Proton prefix. Wait for it to finish, or cancel it from the game's Proton options.",
             ProcessError::NoCompat => "No Proton compatibility layer could be found for this tool. Add an override or set your global default in settings.",
         };
         write!(f, "{s}")

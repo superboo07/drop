@@ -15,12 +15,14 @@
       <ModalStack />
       <ClientUpdateModal />
       <FileConflictModal v-if="route.path !== '/launch-picker'" />
+      <WinetricksToasts v-if="route.path !== '/launch-picker'" />
     </NuxtLayout>
   </template>
 </template>
 
 <script setup lang="ts">
 import "~/composables/downloads.js";
+import "~/composables/winetricks.js";
 import { setupClientUpdateChecks } from "~/composables/client-update.js";
 
 import { useAppState } from "./composables/app-state.js";

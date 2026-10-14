@@ -1,5 +1,7 @@
 <template>
   <div class="space-y-8">
+    <WinetricksProgress v-if="job" :job="job" />
+
     <div
       v-if="protonDefaults"
       class="flex flex-wrap items-center justify-between gap-2 rounded-md bg-blue-900/20 px-3 py-2 outline outline-1 outline-blue-500/30"
@@ -88,25 +90,34 @@
           class="inline-flex items-center gap-x-1.5 rounded-md bg-white/5 px-2 py-1 font-mono text-xs text-zinc-200 outline-1 -outline-offset-1 outline-white/10"
         >
           {{ verb }}
-          <span v-if="installedVerbs.includes(verb)" class="text-green-500"
+          <span
+            v-if="chipState(verb) === 'installed'"
+            class="text-green-500"
             >✓ installed</span
+          >
+          <span
+            v-else-if="chipState(verb) === 'installing'"
+            class="text-blue-300"
+            >installing…</span
+          >
+          <span v-else-if="chipState(verb) === 'queued'" class="text-zinc-400"
+            >queued</span
+          >
+          <span v-else-if="chipState(verb) === 'failed'" class="text-red-400"
+            >failed</span
           >
         </span>
         <button
-          v-if="missingVerbs.length > 0"
+          v-if="unqueuedMissingVerbs.length > 0"
           type="button"
           class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-500"
           @click="() => installMissing()"
         >
-          Install missing
+          {{ running ? "Add missing to queue" : "Install missing" }}
         </button>
       </div>
-      <p
-        v-if="recommendedStatus"
-        class="mt-2 text-sm"
-        :class="recommendedError ? 'text-red-500' : 'text-green-500'"
-      >
-        {{ recommendedStatus }}
+      <p v-if="recommendedError" class="mt-2 text-sm text-red-500">
+        {{ recommendedError }}
       </p>
     </div>
 
@@ -148,12 +159,28 @@
           <button
             @click="() => install(verb.name)"
             type="button"
-            class="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-zinc-800"
+            :disabled="inJob(verb.name)"
+            class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-zinc-800 disabled:hover:bg-transparent"
           >
-            <span class="text-sm font-medium text-zinc-100">{{
-              verb.name
-            }}</span>
-            <span class="text-xs text-zinc-400">{{ verb.description }}</span>
+            <span class="flex min-w-0 flex-col items-start">
+              <span class="text-sm font-medium text-zinc-100">{{
+                verb.name
+              }}</span>
+              <span class="text-xs text-zinc-400">{{ verb.description }}</span>
+            </span>
+            <span
+              :class="[
+                'shrink-0 text-xs font-semibold',
+                inJob(verb.name) ? 'text-zinc-500' : 'text-blue-400',
+              ]"
+              >{{
+                inJob(verb.name)
+                  ? "In queue"
+                  : running
+                    ? "Add to queue"
+                    : "Install"
+              }}</span
+            >
           </button>
         </li>
         <li
@@ -164,12 +191,11 @@
         </li>
       </ul>
 
-      <p
-        v-if="installStatus"
-        class="mt-2 text-sm"
-        :class="installError ? 'text-red-500' : 'text-green-500'"
-      >
-        {{ installStatus }}
+      <p v-if="running" class="mt-2 text-xs text-zinc-400">
+        Verbs you pick now are installed once the current ones are done.
+      </p>
+      <p v-if="installError" class="mt-2 text-sm text-red-500">
+        {{ installError }}
       </p>
     </div>
 
@@ -181,11 +207,15 @@
       <button
         @click="() => runWinecfg()"
         type="button"
-        class="mt-3 inline-flex items-center gap-x-2 rounded-md bg-blue-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+        :disabled="running"
+        class="mt-3 inline-flex items-center gap-x-2 rounded-md bg-blue-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:bg-zinc-800 disabled:text-zinc-400"
       >
         <Cog6ToothIcon class="h-5 w-5" aria-hidden="true" />
         Run Winecfg
       </button>
+      <p v-if="running" class="mt-2 text-xs text-zinc-400">
+        Available once winetricks is done with the prefix.
+      </p>
       <p v-if="winecfgError" class="mt-2 text-sm text-red-500">
         {{ winecfgError }}
       </p>
@@ -198,6 +228,7 @@ import { Cog6ToothIcon, MagnifyingGlassIcon } from "@heroicons/vue/24/outline";
 import { Switch } from "@headlessui/vue";
 import type { GameVersion } from "~/types";
 import RecommendedBadge from "./RecommendedBadge.vue";
+import WinetricksProgress from "../WinetricksProgress.vue";
 import {
   PROTON_DEFAULTS_KEY,
   disabledFromRecommendation,
@@ -265,21 +296,34 @@ invokeWithTimeout<WinetricksVerb[]>("list_winetricks_verbs", undefined, 300_000)
   })
   .finally(() => (verbsLoading.value = false));
 
-const installStatus = ref<string | undefined>();
-const installError = ref(false);
+const job = useWinetricksJob(() => props.gameId);
+const running = computed(() => job.value?.state === "Running");
+
+// Its result is shown right here, so it doesn't need a toast too
+const viewing = useWinetricksViewing();
+onMounted(() => (viewing.value = props.gameId));
+onUnmounted(() => {
+  if (viewing.value === props.gameId) viewing.value = undefined;
+});
+
+// Verbs the running job will still install
+function inJob(verb: string) {
+  return (
+    running.value &&
+    !!job.value?.verbs.some(
+      (v) => v.name === verb && (v.state === "Waiting" || v.state === "Running"),
+    )
+  );
+}
+
+const installError = ref<string | undefined>();
 
 async function install(verb: string) {
-  installError.value = false;
-  installStatus.value = `Starting install of "${verb}"...`;
+  installError.value = undefined;
   try {
-    await invokeWithTimeout("install_winetricks_verb", {
-      gameId: props.gameId,
-      verb,
-    });
-    installStatus.value = `Started installing "${verb}". Check the game's logs if it doesn't seem to do anything.`;
+    await installWinetricks(props.gameId, [verb]);
   } catch (error) {
-    installError.value = true;
-    installStatus.value = (error as unknown as string).toString();
+    installError.value = (error as unknown as string).toString();
   }
 }
 
@@ -317,10 +361,23 @@ const installedVerbs = ref<string[]>([]);
 const missingVerbs = computed(() =>
   recommendedVerbs.filter((v) => !installedVerbs.value.includes(v)),
 );
-const recommendedStatus = ref<string | undefined>();
-const recommendedError = ref(false);
+const unqueuedMissingVerbs = computed(() =>
+  missingVerbs.value.filter((v) => !inJob(v)),
+);
+const recommendedError = ref<string | undefined>();
 
-if (recommendedVerbs.length > 0)
+function chipState(verb: string) {
+  const progress = job.value?.verbs.find((v) => v.name === verb);
+  if (progress?.state === "Running") return "installing";
+  if (progress?.state === "Waiting") return "queued";
+  if (installedVerbs.value.includes(verb) || (progress && verbIsDone(progress)))
+    return "installed";
+  if (progress?.state === "Failed") return "failed";
+  return undefined;
+}
+
+function refreshInstalled() {
+  if (recommendedVerbs.length === 0) return;
   invokeWithTimeout<string[]>("fetch_installed_winetricks", {
     gameId: props.gameId,
   })
@@ -328,19 +385,18 @@ if (recommendedVerbs.length > 0)
     .catch(() => {
       // Only used to mark installed verbs; installing works without it.
     });
+}
+refreshInstalled();
+watch(running, (now, before) => {
+  if (before && !now) refreshInstalled();
+});
 
 async function installMissing() {
-  recommendedError.value = false;
-  const verbs = missingVerbs.value;
+  recommendedError.value = undefined;
   try {
-    await invokeWithTimeout("install_winetricks_verbs", {
-      gameId: props.gameId,
-      verbs,
-    });
-    recommendedStatus.value = `Started installing ${verbs.join(", ")}. Check the game's logs if it doesn't seem to do anything.`;
+    await installWinetricks(props.gameId, unqueuedMissingVerbs.value);
   } catch (error) {
-    recommendedError.value = true;
-    recommendedStatus.value = (error as unknown as string).toString();
+    recommendedError.value = (error as unknown as string).toString();
   }
 }
 

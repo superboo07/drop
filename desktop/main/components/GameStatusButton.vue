@@ -7,7 +7,7 @@
       :class="[
         fetchStatusStyleData($props.status).style,
         showDropdown ? 'rounded-l-md' : 'rounded-md',
-        'inline-flex uppercase font-display items-center gap-x-2 px-4 py-3 text-md font-semibold shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
+        'relative overflow-hidden inline-flex uppercase font-display items-center gap-x-2 px-4 py-3 text-md font-semibold shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
       ]"
     >
       <component
@@ -16,6 +16,13 @@
         aria-hidden="true"
       />
       {{ fetchStatusStyleData($props.status).buttonName }}
+      <span
+        v-if="fetchStatusStyleData($props.status).buttonName === 'Configuring'"
+        class="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-zinc-800"
+        aria-hidden="true"
+      >
+        <span class="configuring-bar absolute inset-y-0 w-2/5 bg-blue-400" />
+      </span>
     </button>
     <Menu
       v-if="showDropdown"
@@ -135,8 +142,13 @@ import {
 } from "@heroicons/vue/24/outline";
 import { ArrowsRightLeftIcon, ArrowUpTrayIcon } from "@heroicons/vue/24/solid";
 import { platform } from "@tauri-apps/plugin-os";
+import WinetricksSpinner from "./WinetricksSpinner.vue";
 
-const props = defineProps<{ status: GameStatus }>();
+const props = defineProps<{
+  status: GameStatus;
+  // Winetricks is setting up the game's prefix, so it can't be launched yet
+  configuring?: boolean;
+}>();
 const emit = defineEmits<{
   (e: "install"): void;
   (e: "launch"): void;
@@ -146,6 +158,7 @@ const emit = defineEmits<{
   (e: "options"): void;
   (e: "resume"): void;
   (e: "addToSteam"): void;
+  (e: "configuring"): void;
 }>();
 
 const currentPlatform = platform();
@@ -158,6 +171,19 @@ interface StatusStyleData {
 }
 
 function fetchStatusStyleData(status: GameStatus): StatusStyleData {
+  if (
+    props.configuring &&
+    status.type === "Installed" &&
+    status.install_type.type !== InstalledType.PartiallyInstalled
+  ) {
+    return {
+      style:
+        "bg-zinc-700 text-zinc-200 hover:bg-zinc-600 focus-visible:outline-zinc-600",
+      buttonName: "Configuring",
+      icon: WinetricksSpinner,
+      action: () => emit("configuring"),
+    };
+  }
   if (status.type === "Installed") {
     if (status.install_type.type === InstalledType.Installed) {
       return {
@@ -256,3 +282,17 @@ const buttonActions: { [key in EmptyGameStatusEnum]: () => void } = {
   Running: () => emit("kill"),
 };
 </script>
+
+<style scoped>
+.configuring-bar {
+  animation: configuring-slide 1.6s ease-in-out infinite;
+}
+@keyframes configuring-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+</style>

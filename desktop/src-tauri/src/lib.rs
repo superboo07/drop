@@ -307,13 +307,19 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             open_game_wine_prefix,
             #[cfg(target_os = "linux")]
-            install_winetricks_verb,
-            #[cfg(target_os = "linux")]
             install_winetricks_verbs,
             #[cfg(target_os = "linux")]
             fetch_installed_winetricks,
             #[cfg(target_os = "linux")]
             list_winetricks_verbs,
+            #[cfg(target_os = "linux")]
+            fetch_winetricks_jobs,
+            #[cfg(target_os = "linux")]
+            cancel_winetricks,
+            #[cfg(target_os = "linux")]
+            dismiss_winetricks,
+            #[cfg(target_os = "linux")]
+            open_winetricks_log,
             #[cfg(target_os = "linux")]
             run_winecfg,
             get_launch_options,
@@ -343,7 +349,13 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimize"]),
-        ))
+        ));
+
+    // Tells someone who closed Drop to the tray that winetricks finished
+    #[cfg(target_os = "linux")]
+    let app = app.plugin(tauri_plugin_notification::init());
+
+    let app = app
         .setup(|app| {
             let handle = app.handle().clone();
 

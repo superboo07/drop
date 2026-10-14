@@ -69,10 +69,12 @@
             @queue="() => queue()"
             @uninstall="() => uninstall()"
             @kill="() => kill()"
-            @options="() => (configureModalOpen = true)"
+            @options="() => openOptions()"
             @resume="() => resumeDownload()"
             @add-to-steam="() => addToSteam()"
+            @configuring="() => openOptions('Proton')"
             :status="status"
+            :configuring="winetricksJob?.state === 'Running'"
           />
           <button
             v-if="status.type === 'Installed' && status.update_available"
@@ -94,6 +96,27 @@
             Store
           </NuxtLink>
         </div>
+        <p
+          v-if="winetricksJob?.state === 'Running'"
+          class="mt-3 text-sm text-zinc-400"
+        >
+          <template v-if="winetricksVerb">
+            Installing
+            <span class="font-mono text-zinc-300">{{ winetricksVerb.name }}</span>
+            into the Proton prefix<template v-if="winetricksJob.verbs.length > 1">
+              · {{ verbPosition(winetricksJob) }}</template
+            >
+          </template>
+          <template v-else>Winetricks is starting up</template>
+          ·
+          <button
+            type="button"
+            class="font-medium text-blue-400 hover:text-blue-300"
+            @click="() => openOptions('Proton')"
+          >
+            View progress
+          </button>
+        </p>
       </div>
 
       <!-- Main content -->
@@ -603,6 +626,7 @@
     "
     v-model="configureModalOpen"
     :game-id="game.id"
+    :initial-tab="optionsTab"
   />
 
   <Transition
@@ -731,6 +755,31 @@ const installDirs = ref<undefined | Array<string>>();
 const currentImageIndex = ref(0);
 
 const configureModalOpen = ref(false);
+const optionsTab = ref<string | undefined>();
+function openOptions(tab?: string) {
+  optionsTab.value = tab;
+  configureModalOpen.value = true;
+}
+watch(configureModalOpen, (open) => {
+  if (!open) optionsTab.value = undefined;
+});
+
+const winetricksJob = useWinetricksJob(id);
+const winetricksVerb = computed(() =>
+  winetricksJob.value?.verbs.find((verb) => verb.state === "Running"),
+);
+
+// Links elsewhere (the header's winetricks widget, its toasts) open a tab
+// with ?options=<tab name>
+watch(
+  () => route.query.options,
+  (tab) => {
+    if (typeof tab !== "string") return;
+    openOptions(tab);
+    router.replace({ query: { ...route.query, options: undefined } });
+  },
+  { immediate: true },
+);
 
 // Merges the server's confirmed total with any not-yet-synced local seconds
 // (see fetch_game_playtime), so this is accurate even before a sync happens.

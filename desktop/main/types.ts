@@ -216,3 +216,32 @@ export type EmulatorOverride = {
   // Install directory that games running through this emulator default to
   installDir: string | null;
 };
+
+export type WinetricksVerbState =
+  | "Waiting"
+  | "Running"
+  | "Installed"
+  | "AlreadyInstalled"
+  | "Failed"
+  | "NotRun";
+
+export type WinetricksVerbProgress = {
+  name: string;
+  state: WinetricksVerbState;
+  startedAt: number | null;
+  finishedAt: number | null;
+  activity: string | null;
+  percent: number | null;
+};
+
+export type WinetricksJob = {
+  gameId: string;
+  state: "Running" | "Succeeded" | "Failed" | "Cancelled";
+  verbs: WinetricksVerbProgress[];
+  startedAt: number;
+  finishedAt: number | null;
+  activity: string | null;
+  output: string[];
+  error: string | null;
+  logPath: string;
+};

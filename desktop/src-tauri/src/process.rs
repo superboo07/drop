@@ -164,153 +164,72 @@ pub fn open_game_wine_prefix(game_id: String, app_handle: AppHandle) -> Result<(
     })
 }
 
-// Runs a Wine helper tool (winetricks, winecfg, ...) inside the same
-// Proton/Wine environment (PROTONPATH, WINEPREFIX, GAMEID) a game itself
-// launches with, via umu-run, mirroring UMUCompatLauncher's env
-// construction. Not tied into ProcessManager/process tracking since these
-// are one-off diagnostic tools, not the game itself.
+// Installs verbs in one winetricks run, or queues them onto the game's
+// running winetricks job if it has one. Progress arrives as events.
 #[cfg(target_os = "linux")]
-fn run_wine_tool(
+#[tauri::command]
+pub fn install_winetricks_verbs(
     game_id: String,
-    tool: &str,
-    extra_args: &[&str],
-    extra_env: &[(&str, &str)],
+    verbs: Vec<String>,
+    app_handle: AppHandle,
 ) -> Result<(), ProcessError> {
-    let db_lock = borrow_db_checked();
-
-    let meta = db_lock
-        .applications
-        .installed_game_version
-        .get(&game_id)
-        .cloned()
-        .ok_or(ProcessError::NotInstalled)?;
-
-    let version_id = match db_lock.applications.game_statuses.get(&game_id) {
-        Some(GameDownloadStatus::Installed { version_id, .. }) => version_id.clone(),
-        _ => return Err(ProcessError::NotInstalled),
-    };
-
-    let game_version = db_lock
-        .applications
-        .game_versions
-        .get(&version_id)
-        .ok_or(ProcessError::InvalidVersion)?;
-
-    let proton_path = game_version
-        .user_configuration
-        .override_proton_path
-        .clone()
-        .or_else(|| db_lock.applications.default_proton_path.clone())
-        .ok_or(ProcessError::NoCompat)?;
-
-    let umu_id_override = game_version
-        .launches
-        .iter()
-        .find(|v| v.platform == meta.target_platform)
-        .and_then(|v| v.umu_id_override.as_ref())
-        .map_or("", |v| v);
-    let umu_game_id = if umu_id_override.is_empty() {
-        game_version.version_id.clone()
-    } else {
-        umu_id_override.to_string()
-    };
-
-    let compat_env = process::process_handlers::compat_env_vars(&game_version.user_configuration);
-
-    drop(db_lock);
-
-    let pfx_dir = DATA_ROOT_DIR.join("pfx").join(&game_id);
-    if !pfx_dir.exists() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "This game hasn't been launched through Proton yet, so it has no prefix",
-        )
-        .into());
-    }
-
-    let umu_launcher = ::client::compat::UMU_LAUNCHER_EXECUTABLE
-        .as_ref()
-        .ok_or(ProcessError::NoCompat)?;
-
-    // Proton's own winetricks handler runs this with check=False and
-    // exits quietly on failure, so without capturing stdout/stderr
-    // ourselves a failure here is completely invisible.
-    let log_dir = DATA_ROOT_DIR.join("logs").join(&game_id);
-    std::fs::create_dir_all(&log_dir)?;
-    let log_path = log_dir.join(format!(
-        "{tool}-{}.log",
-        chrono::offset::Local::now().timestamp()
-    ));
-    let log_file = std::fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(&log_path)?;
-    info!("running {tool}, logging to {}", log_path.display());
-
-    let mut command = std::process::Command::new(umu_launcher);
-    command
-        .arg(tool)
-        .args(extra_args)
-        .envs(extra_env.iter().copied())
-        .envs(compat_env)
-        .env("GAMEID", umu_game_id)
-        .env("PROTONPATH", proton_path)
-        .env("WINEPREFIX", pfx_dir)
-        .stdout(log_file.try_clone()?)
-        .stderr(log_file);
-    sanitize_external_command(&mut command);
-
-    command.spawn()?;
-    Ok(())
+    process::winetricks::install(app_handle, game_id, verbs)
 }
 
 #[cfg(target_os = "linux")]
 #[tauri::command]
-pub fn install_winetricks_verb(game_id: String, verb: String) -> Result<(), ProcessError> {
-    // -q (unattended) skips winetricks' own confirmation prompts entirely,
-    // so this doesn't depend on zenity/kdialog being detected/working at
-    // all -- we have our own verb picker in the frontend instead.
-    run_wine_tool(game_id, "winetricks", &["-q", &verb], &[])
+pub fn fetch_winetricks_jobs() -> Vec<process::winetricks::WinetricksJob> {
+    process::winetricks::jobs()
 }
 
-// Installs several verbs in one winetricks run, for the server's recommended
-// components.
 #[cfg(target_os = "linux")]
 #[tauri::command]
-pub fn install_winetricks_verbs(game_id: String, verbs: Vec<String>) -> Result<(), ProcessError> {
-    let mut args = vec!["-q"];
-    args.extend(verbs.iter().map(String::as_str));
-    run_wine_tool(game_id, "winetricks", &args, &[])
+pub fn cancel_winetricks(game_id: String) {
+    process::winetricks::cancel(&game_id);
 }
 
-// Verbs winetricks has recorded as installed in this game's prefix. It logs
-// each one to winetricks.log in the Wine prefix, which Proton keeps in a pfx
-// folder inside WINEPREFIX, so both places are checked. Empty when the game
-// hasn't been launched yet.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn dismiss_winetricks(game_id: String, app_handle: AppHandle) {
+    process::winetricks::dismiss(&app_handle, &game_id);
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub fn open_winetricks_log(game_id: String, app_handle: AppHandle) -> Result<(), ProcessError> {
+    let path = process::winetricks::log_path(&game_id)
+        .ok_or(ProcessError::InvalidID)?
+        .display()
+        .to_string();
+    open_externally(&path, || {
+        app_handle
+            .opener()
+            .open_path(path.clone(), None::<&str>)
+            .map_err(|v| ProcessError::OpenerError(Arc::new(v)))
+    })
+}
+
 #[cfg(target_os = "linux")]
 #[tauri::command]
 pub fn fetch_installed_winetricks(game_id: String) -> Vec<String> {
-    let pfx_dir = DATA_ROOT_DIR.join("pfx").join(&game_id);
-    [
-        pfx_dir.join("winetricks.log"),
-        pfx_dir.join("pfx").join("winetricks.log"),
-    ]
-    .iter()
-    .filter_map(|path| std::fs::read_to_string(path).ok())
-    .flat_map(|log| {
-        log.lines()
-            .map(|v| v.trim().to_owned())
-            .filter(|v| !v.is_empty())
-            .collect::<Vec<_>>()
-    })
-    .collect()
+    process::winetricks::installed_verbs(&game_id)
 }
 
+// Not tied into ProcessManager/process tracking since it's a one-off tool,
+// not the game itself. Its output goes to a log, since Proton exits quietly
+// on failure.
 #[cfg(target_os = "linux")]
 #[tauri::command]
 pub fn run_winecfg(game_id: String) -> Result<(), ProcessError> {
-    run_wine_tool(game_id, "winecfg", &[], &[])
+    if process::winetricks::is_running(&game_id) {
+        return Err(ProcessError::PrefixBusy);
+    }
+    let mut command = process::winetricks::wine_tool_command(&game_id, "winecfg", &[])?;
+    let (log_path, log_file) = process::winetricks::new_tool_log(&game_id, "winecfg")?;
+    info!("running winecfg, logging to {}", log_path.display());
+    command.stdout(log_file.try_clone()?).stderr(log_file);
+    command.spawn()?;
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Clone)]

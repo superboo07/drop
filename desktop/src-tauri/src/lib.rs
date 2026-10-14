@@ -74,6 +74,8 @@ mod remote;
 mod scheduler;
 mod settings;
 mod updates;
+#[cfg(target_os = "linux")]
+mod webkit_env;
 
 use client::*;
 use download_manager::*;
@@ -115,6 +117,9 @@ async fn setup(handle: AppHandle) -> AppState {
         .expect("Failed to build config");
 
     log4rs::init_config(config).expect("Failed to initialise log4rs");
+
+    #[cfg(target_os = "linux")]
+    webkit_env::log_decision();
 
     ProcessManagerWrapper::init(handle.clone());
     DownloadManagerWrapper::init(handle.clone());
@@ -213,6 +218,9 @@ pub fn custom_panic_handler(e: &PanicHookInfo) -> Option<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    webkit_env::apply();
+
     // let global_span = span!(Level::TRACE, "global_span");
     // let _enter = global_span.enter();
     std::panic::set_hook(Box::new(|e| {

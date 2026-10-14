@@ -14,9 +14,12 @@ export const clientLogLevels: ClientLogLevel[] = [
 // The client's own log: "{date} | {level} | {file}:{line} - {message}"
 const dropLine = /^(\S+) \| (ERROR|WARN|INFO|DEBUG|TRACE) \| (\S+) - (.*)$/;
 // Everything else (game output, stderr): "ERROR: ...", "WARNING ...",
+// a tool's name first ("Proton: Error ...", "ProtonFixes[5860] WARN: ..."),
 // GLib's "(drop-app:123): Gtk-WARNING **: ..." and Wine's "err:module:..."
 const prefixedLine =
-  /^(?:\([^)]*\): )?(?:[\w-]+-)?(ERROR|FATAL|CRITICAL|WARNING|WARN|INFO|DEBUG)\b|^(err|warn|fixme):/i;
+  /^(?:\([^)]*\): )?(?:[\w-]+(?:\[\d+\])?:\s+|[\w-]+\[\d+\]\s+)?(?:[\w-]+-)?(ERROR|FATAL|CRITICAL|WARNING|WARN|INFO|DEBUG)\b|^(err|warn|fixme):/i;
+// Xlib's last words when the X server goes away under a game
+const xlibFatal = /^XIO:\s+fatal/;
 
 export function parseDropLogLine(line: string) {
   const match = line.match(dropLine);
@@ -32,6 +35,8 @@ export function parseDropLogLine(line: string) {
 export function classifyLogLine(line: string): ClientLogLevel | undefined {
   const drop = parseDropLogLine(line);
   if (drop) return drop.level;
+
+  if (xlibFatal.test(line)) return "ERROR";
 
   const match = line.match(prefixedLine);
   if (!match) return undefined;

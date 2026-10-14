@@ -245,7 +245,7 @@ class ClientLogManager {
     const mtime = Math.floor(bundle.receivedAt.getTime() / 1000);
 
     const add = (name: string, content: Buffer) => {
-      parts.push(tarHeader(`${folder}/${name}`, content.length, mtime));
+      parts.push(tarHeader(folder, name, content.length, mtime));
       parts.push(content);
       const padding = (512 - (content.length % 512)) % 512;
       if (padding) parts.push(Buffer.alloc(padding));
@@ -254,7 +254,8 @@ class ClientLogManager {
     for (const [index, file] of files.entries()) {
       const content = await this.readFile(bundle, index);
       if (!content) continue;
-      let name = file.name.replace(/[^\w.-]+/g, "_").slice(0, 60) || "file";
+      // a ustar name holds 100 bytes; keep the end, where ".log" is
+      let name = file.name.replace(/[^\w.-]+/g, "_").slice(-90) || "file";
       if (used.has(name)) name = `${index}-${name}`;
       used.add(name);
       add(name, content);
@@ -281,8 +282,11 @@ function archiveName(bundle: ClientLogBundleModel) {
   return `drop-logs-${client}-${time}`;
 }
 
-/** A ustar header for a plain file; `name` must fit in 100 bytes */
-function tarHeader(name: string, size: number, mtime: number) {
+/**
+ * A ustar header for a plain file in `folder`. `name` must fit in 100 bytes
+ * and `folder` in 155; ustar keeps the folder in its own prefix field.
+ */
+function tarHeader(folder: string, name: string, size: number, mtime: number) {
   const header = Buffer.alloc(512);
   const write = (value: string, offset: number, length: number) =>
     header.write(value, offset, length, "utf8");
@@ -290,6 +294,7 @@ function tarHeader(name: string, size: number, mtime: number) {
     value.toString(8).padStart(length - 1, "0") + "\0";
 
   write(name, 0, 100);
+  write(folder, 345, 155);
   write(octal(0o644, 8), 100, 8);
   write(octal(0, 8), 108, 8);
   write(octal(0, 8), 116, 8);

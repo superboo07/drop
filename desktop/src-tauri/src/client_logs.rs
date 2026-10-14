@@ -176,7 +176,9 @@ fn environment() -> Vec<(String, String, bool)> {
         let value = std::env::var(name).ok();
         let flagged = match name {
             "PATH" => value.is_none(),
-            "GAMESCOPE_WAYLAND_DISPLAY" | "PYTHONHOME" | "PYTHONPATH" => value.is_some(),
+            // PYTHONHOME/PYTHONPATH aren't flagged: AppRun sets them in every
+            // AppImage, and they're stripped before anything is launched
+            "GAMESCOPE_WAYLAND_DISPLAY" => value.is_some(),
             _ => false,
         };
         // Unset values only matter where their absence is the point

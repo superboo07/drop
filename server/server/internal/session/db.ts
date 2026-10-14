@@ -49,14 +49,16 @@ export default function createDBSessionHandler(): SessionProvider {
       });
       if (result === null) return undefined;
 
-      // add to cache
-      // need to cast to Session since prisma returns a more specific type
-      await cache.set(token, result as SessionWithToken);
-
       // i hate casting
       // need to cast to unknown since result.data can be an N deep json object technically
       // ts doesn't like that be cast down to the more constraining session type
-      return result.data as unknown as T;
+      const session = { ...(result.data as object), token } as unknown as T;
+
+      // cache the same shape setSession does - caching the row itself made
+      // every later read see a session with no `authenticated` field
+      await cache.set(token, session);
+
+      return session;
     },
     async removeSession(token) {
       await cache.remove(token);

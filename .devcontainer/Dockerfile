@@ -8,6 +8,10 @@
 # **Nothing user-supplied is in this image** -- no game library, no server
 # data, no API keys (server/.env), no LunaTranslator/Proton. Those are the
 # user's and are mounted or live in the (bind-mounted) tree.
+#
+# Everything runs as root in here. The container is run by **rootless Podman**,
+# so container root is your own host user: files written into the bind-mounted
+# tree stay owned by you, and root in here has no privilege you do not have.
 
 # Debian trixie. Its WebKitGTK is current and security-maintained, which is
 # the point: this is a browser engine rendering what a remote server sends. In
@@ -15,7 +19,8 @@
 # Mesa set, so the AppImage's libwayland mismatch (desktop/build_appimage.sh,
 # step 4) cannot happen. The nested session's tools, built on Ubuntu 24.04
 # (desktop/vendor/Dockerfile), run here too: trixie's glibc is newer.
-FROM debian:trixie-slim
+# Fully qualified, so the host's Podman needs no short-name lookup to build it.
+FROM docker.io/library/debian:trixie-slim
 
 # Build toolchain. build-essential/pkg-config/clang for the Rust -sys crates;
 # protobuf-compiler for parity with the root Dockerfile's torrential stage
@@ -176,9 +181,10 @@ RUN set -eu; \
 
 # **Container builds work in here, with podman** -- the project's own Dockerfiles
 # and scripts that call `docker build`/`docker run` (podman-docker is the
-# `docker` command). There is no docker socket: handing one in would give the
-# container the host's daemon. Podman runs as this container's root, which the
-# rootless host daemon maps to you, so nested builds get no more than you have.
+# `docker` command). There is no container socket from the host: handing one
+# in would give the container the host's engine. Podman runs as this
+# container's root, which the rootless host Podman maps to you, so nested
+# builds get no more than you have.
 # docker-compose.yml supplies what it needs (SYS_ADMIN inside our user
 # namespace, seccomp unconfined for pivot_root/keyctl, a storage volume); the
 # config below covers what a container cannot do:
@@ -232,11 +238,12 @@ ENV DISABLE_AUTOUPDATER=1
 ENV DISABLE_INSTALLATION_CHECKS=1
 
 # Mount points for the volumes docker-compose.yml puts here: the SSH directory
-# you put your own key in, git's global config, and Claude Code's state. Created
-# in the image so the volumes inherit these modes -- .ssh in particular is 0700
-# or ssh refuses to use what is in it. **Nothing is copied from the host**.
-RUN mkdir -p /root/.ssh /root/.config/git /root/.claude /root/.local/share/pnpm/store \
-	&& chmod 700 /root/.ssh
+# you put your own key in, git's global config, Claude Code's state, the pnpm
+# store and podman's image storage. Created in the image so the volumes inherit
+# these modes -- .ssh in particular is 0700 or ssh refuses to use what is in it.
+# **Nothing is copied from the host**.
+RUN install -d -m 0700 /root/.ssh \
+	&& install -d /root/.config/git /root/.claude /root/.local/share/pnpm/store /var/lib/containers
 
 # HTTP(S) remotes (the Forgejo origin, GitHub) need a password or token on every
 # push unless a credential helper keeps it. git's own default for `store` is
@@ -247,7 +254,7 @@ RUN mkdir -p /root/.ssh /root/.config/git /root/.claude /root/.local/share/pnpm/
 # Plain text, mode 0600, never leaves the volume; no keyring (no session D-Bus).
 RUN git config --system credential.helper 'store --file /root/.config/git/credentials'
 
-RUN mkdir -p /commandhistory && touch /commandhistory/.bash_history
+RUN install -d /commandhistory && install -m 0600 /dev/null /commandhistory/.bash_history
 ENV HISTFILE=/commandhistory/.bash_history
 
 # The to-do list and command reference (welcome.sh) in every interactive

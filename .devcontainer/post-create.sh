@@ -7,7 +7,14 @@ cd "$(dirname "$0")/.."
 
 # The tree is a bind mount from the host, so git sees an owner that is not the
 # user running it.
-git config --global --add safe.directory "$PWD" || true
+# Added once: the config is on a volume, so `--add` alone would pile up a copy
+# per container created.
+git config --global --get-all safe.directory | grep -qxF "$PWD" \
+    || git config --global --add safe.directory "$PWD"
+
+# The host's installed plugins are mounted read-only; enabling them is this
+# container's own setting (enable-plugins.sh says how).
+bash .devcontainer/enable-plugins.sh
 
 # The game library. The server's default LIBRARY is ./.data/library relative to
 # server/ (server/server/internal/config/sys-conf.ts), where `pnpm dev` runs.

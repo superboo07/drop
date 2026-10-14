@@ -1,4 +1,6 @@
-# The devcontainer, plus the Postgres the server needs. Compose rather than a
+# The devcontainer, plus the Postgres the server needs, run by **rootless
+# Podman** (`podman compose`; claude.sh, or VS Code with
+# "dev.containers.dockerPath": "podman"). Compose rather than a
 # plain image because the game library is mounted from a path that differs per
 # machine (compose reads .env for it) and because Postgres is its own service.
 # .env lives at the top of the repository; devcontainer.json's initializeCommand
@@ -8,18 +10,31 @@
 # container still comes up and post-create reports the missing library
 # explicitly.
 #
+# Every named volume has an explicit `name:` (bottom of the file): the compose
+# project name the tooling picks differs between providers (docker-compose:
+# `drop_devcontainer`, podman-compose: `dropdevcontainer`) and would otherwise
+# prefix the volumes, so a provider switch would start from empty volumes --
+# no login, no keys, no history.
+#
 # (server/.devcontainer/ is upstream's own, server-only devcontainer. It is left
 # as it is so upstream syncs stay clean; this one covers the whole monorepo.)
 services:
   dev:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Built from Dockerfile by initialize.sh on the host, not here: the dev
+    # container tooling's own build goes through a generated Dockerfile outside
+    # the build context, which Docker's buildx bake refuses outright. `never` so
+    # a missing image is an error, not a pull of whatever someone else
+    # published under this name.
+    image: localhost/drop-devcontainer:latest
+    pull_policy: never
     command: sleep infinity
     init: true
     depends_on:
       db:
         condition: service_healthy
+
+    # Root in here, which rootless Podman maps to your own host user: files
+    # written into the bind-mounted tree stay owned by you.
 
     environment:
       DROP_LIBRARY_DIR: ${DROP_LIBRARY_DIR:-}
@@ -32,7 +47,7 @@ services:
       EXTERNAL_URL: http://localhost:4000
 
     volumes:
-      - ..:/workspaces/drop:cached
+      - ..:/workspaces/drop
 
       # **The user's own game library.** Drop ships no games; the server scans
       # this /{game}/{version}/... tree (server/server/internal/library/README.md).
@@ -53,7 +68,13 @@ services:
       # game mode: main/composables/use-spatial-gamepad-nav.ts) through the Web
       # Gamepad API, which WebKitGTK reads from evdev via libmanette. The
       # directory is bound so a pad plugged in later appears; udev's database
-      # is how libmanette tells a pad from a keyboard.
+      # is how libmanette tells a pad from a keyboard. Rootless Podman cannot
+      # grant device access, and needs none here: systemd's uaccess rule
+      # (70-uaccess.rules) gives the logged-in user an ACL on joystick nodes
+      # only, and container root *is* that user. Keyboards and mice stay
+      # root:input 0660 and unreadable in here -- deliberately: keeping the
+      # host's `input` group (keep-groups, which also needs crun; this host
+      # runs runc) would let anything in the container read every keystroke.
       - /dev/input:/dev/input
       - /run/udev:/run/udev:ro
 
@@ -105,24 +126,32 @@ services:
       - drop-gitconfig:/root/.config/git
       # Claude Code's credentials, settings and per-project history.
       - drop-claude:/root/.claude
-      # Your own skills, read-only, over the volume above. Docker mounts the
-      # shorter path first, so this lands inside the volume.
+      # Your own skills, read-only, over the volume above. The shorter path is
+      # mounted first, so this lands inside the volume.
       - ${HOME}/.claude/skills:/root/.claude/skills:ro
+      # Your installed plugins, read-only, the same way: install and update them
+      # on the host. Mounted twice because installed_plugins.json and
+      # known_marketplaces.json record absolute host paths -- the host path makes
+      # those resolve, the /root one is where CLAUDE_CONFIG_DIR looks for the
+      # manifests. enable-plugins.sh enables each in this container's settings.
+      - ${HOME}/.claude/plugins:/root/.claude/plugins:ro
+      - ${HOME}/.claude/plugins:${HOME}/.claude/plugins:ro
+      # Plugins' own persistent state (CLAUDE_PLUGIN_DATA) must be writable, and
+      # is the container's, never the host's.
+      - drop-claude-plugindata:/root/.claude/plugins/data
 
     # The GPU, for WebKit's renderer and the nested session's Xwayland (glamor).
-    # Without it Mesa falls back to llvmpipe.
+    # Without it Mesa falls back to llvmpipe. Opened through the same uaccess
+    # ACL as the gamepads (card* is root:video 0660 plus an ACL for you).
     devices:
       - /dev/dri:/dev/dri
-    # Docker denies character devices it was not given; 13 is the input major
-    # (evdev and joystick nodes). Without it every gamepad open is EPERM.
-    device_cgroup_rules:
-      - "c 13:* rmw"
-
-    # **Podman, so container builds work in here** (Dockerfile). The host
-    # daemon is rootless: these apply inside the user namespace it gives us,
+    # **Podman, so container builds work in here** (Dockerfile). The host's
+    # Podman is rootless: these apply inside the user namespace it gives us,
     # never to the host. SYS_ADMIN is for podman's mounts and namespaces;
     # seccomp=unconfined because the default profile still denies crun's
-    # pivot_root and keyctl. No docker socket, no --privileged.
+    # pivot_root and keyctl; label=disable because SELinux labels would deny
+    # the bind mounts where SELinux is enforcing. No container socket, no
+    # --privileged.
     cap_add:
       - SYS_ADMIN
     security_opt:
@@ -132,8 +161,12 @@ services:
   # The same Postgres as server/dev-tools/compose.yml. Not published on a host
   # port: only the dev service talks to it, and that way it cannot collide with
   # a host-side instance of that compose file on 5432.
+  #
+  # Runs in Podman's default rootless user namespace, which maps the image's
+  # postgres user exactly as rootless Docker did, so the moved pgdata volume
+  # keeps working. Fully qualified, so no short-name lookup is needed.
   db:
-    image: postgres:14-alpine
+    image: docker.io/library/postgres:14-alpine
     environment:
       POSTGRES_USER: drop
       POSTGRES_PASSWORD: drop
@@ -148,21 +181,42 @@ services:
 
 volumes:
   drop-containers:
+    name: drop-containers
   drop-nm-root:
+    name: drop-nm-root
   drop-nm-server:
+    name: drop-nm-server
   drop-nm-base:
+    name: drop-nm-base
   drop-nm-docs:
+    name: drop-nm-docs
   drop-nm-promo:
+    name: drop-nm-promo
   drop-nm-desktop:
+    name: drop-nm-desktop
   drop-nm-desktop-main:
+    name: drop-nm-desktop-main
   drop-nuxt-server:
+    name: drop-nuxt-server
   drop-nuxt-base:
+    name: drop-nuxt-base
   drop-nuxt-desktop-main:
+    name: drop-nuxt-desktop-main
   drop-pnpm-store:
+    name: drop-pnpm-store
   drop-cargo-registry:
+    name: drop-cargo-registry
   drop-cargo-git:
+    name: drop-cargo-git
   drop-bashhistory:
+    name: drop-bashhistory
   drop-ssh:
+    name: drop-ssh
   drop-gitconfig:
+    name: drop-gitconfig
   drop-claude:
+    name: drop-claude
+  drop-claude-plugindata:
+    name: drop-claude-plugindata
   drop-pgdata:
+    name: drop-pgdata

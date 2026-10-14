@@ -1,6 +1,9 @@
 {
   "name": "drop",
 
+  // **Run by rootless Podman, not Docker** (VS Code: set "dev.containers.dockerPath"
+  // to "podman"; claude.sh passes --docker-path podman).
+  //
   // Compose rather than a bare image, because the game library is mounted from
   // a path that differs on every machine (.env is how that is said once) and
   // Postgres runs beside it as its own service. Copy .env.example (top of the
@@ -11,9 +14,9 @@
   "workspaceFolder": "/workspaces/drop",
   "shutdownAction": "stopCompose",
 
-  // Root, matching the rootless host daemon: container root maps to the host
-  // user, so files written into the bind-mounted tree stay owned by you. The
-  // Wayland bind goes to /run/user/0 to match.
+  // Root, which rootless Podman maps to your host user: files written into the
+  // bind-mounted tree stay owned by you. The Wayland bind goes to /run/user/0
+  // to match.
   "remoteUser": "root",
   "containerUser": "root",
 
@@ -52,6 +55,16 @@
     "CLAUDE_CONFIG_DIR": "/root/.claude"
   },
 
+  // **The channels VS Code itself opens to host credentials**: it forwards the
+  // host's ssh agent and injects its own askpass and GitHub token into
+  // terminals. Blanked here (remoteEnv, because they must override what VS Code
+  // injects); the vscode settings below turn the injection off too.
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "",
+    "GIT_ASKPASS": "",
+    "GITHUB_TOKEN": ""
+  },
+
   // The server's `pnpm dev` (server/nuxt.config.ts devServer.port).
   "forwardPorts": [4000],
 
@@ -76,6 +89,8 @@
         "anthropic.claude-code"
       ],
       "settings": {
+        "git.terminalAuthentication": false,
+        "github.gitAuthentication": false,
         "[json]": {
           "editor.defaultFormatter": "esbenp.prettier-vscode"
         },
@@ -86,12 +101,13 @@
     }
   },
 
-  // **Runs on the host, before the container exists.** Compose looks for .env
-  // beside the compose file; the project keeps it at the top of the tree. A link
-  // rather than a copy so there is one .env, made only when there is one to
-  // link to. Both paths are gitignored by the `*.env` rule.
-  "initializeCommand": "bash -c '[ -f .env ] && ln -sfn ../.env .devcontainer/.env || true'",
+  // **Runs on the host, before the container exists.** Links .env beside the
+  // compose file, checks podman's compose provider can reach Podman, and builds
+  // the image with a plain `podman build` -- see initialize.sh.
+  "initializeCommand": "bash .devcontainer/initialize.sh",
 
+  // Setup actions only. What you need to read is in welcome.sh, which claude.sh
+  // and every new terminal show -- this hook's output only reaches a log.
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "waitFor": "postCreateCommand"
 }

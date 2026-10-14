@@ -1,6 +1,6 @@
 ---
 name: publish-client-update
-description: Build a desktop client AppImage from the current tree and upload it to a Drop server's Updater (Admin > Settings > Updater) with its tag, branch (test if dirty, release if clean) and drafted release notes, so clients get offered them. Use when the user asks to publish, ship, upload or release a client build/AppImage/update.
+description: Build the desktop client's amd64 and arm64 AppImages from the current tree and upload both to a Drop server's Updater (Admin > Settings > Updater) with their tag, branch (test if dirty, release if clean) and drafted release notes, so clients get offered them. Use when the user asks to publish, ship, upload or release a client build/AppImage/update.
 argument-hint: "[--draft] [--required]"
 disable-model-invocation: true
 allowed-tools: Bash(bash desktop/build_appimage.sh*), Bash(git status *), Bash(git merge-base *), Bash(node .claude/skills/publish-client-update/publish.mjs *), Bash(git log *), Bash(git show *), Bash(git diff *), Bash(git rev-parse *), Bash(git cat-file *)
@@ -8,19 +8,19 @@ allowed-tools: Bash(bash desktop/build_appimage.sh*), Bash(git status *), Bash(g
 
 # Publish client update
 
-Builds a desktop client AppImage from the current tree and sends it to the Drop server's Updater with its tag, branch and release notes. The server side lives in `server/server/internal/clientreleases/` and `server/server/api/v1/admin/updater/`; this skill only drives that API through `publish.mjs` (in this folder), so don't reimplement the HTTP calls.
+Builds the desktop client's AppImages from the current tree, one for amd64 (x86_64) and one for arm64 (aarch64), and sends both to the Drop server's Updater with the same tag, branch and release notes. The server keeps a release per architecture, and each client is offered the one for its own. The server side lives in `server/server/internal/clientreleases/` and `server/server/api/v1/admin/updater/`; this skill only drives that API through `publish.mjs` (in this folder), so don't reimplement the HTTP calls.
 
 Arguments: `$ARGUMENTS`: `--draft` to upload without publishing, `--required` to mark the release as a required update.
 
 ## 1. Build
 
-**Always build a new AppImage first**, from the tree exactly as it is. Don't check whether an existing AppImage is already uploaded, don't commit anything first, and don't ask. Uncommitted changes are fine: they make a dirty build, and dirty builds are how things get tested.
+**Always build new AppImages first**, from the tree exactly as it is. Don't check whether an existing AppImage is already uploaded, don't commit anything first, and don't ask. Uncommitted changes are fine: they make a dirty build, and dirty builds are how things get tested.
 
 ```bash
 bash desktop/build_appimage.sh
 ```
 
-Run it from the repo root, in the background, and wait for it to finish (about ten minutes). It writes the AppImage to the repo root. If it fails, show the end of its output and stop.
+With no arguments it builds both architectures, amd64 then arm64 (arm64 is cross-compiled). Run it from the repo root, in the background, and wait for it to finish (about ten minutes per architecture). It writes both AppImages to the repo root, `..._amd64.AppImage` and `..._arm64.AppImage`. If it fails, show the end of its output and stop: don't publish one architecture without the other unless the user says to.
 
 ## 2. Find the build and the branch's last release
 
@@ -29,17 +29,17 @@ node .claude/skills/publish-client-update/publish.mjs status
 ```
 
 It prints JSON with:
-- `local`: each AppImage in the repo root, newest first, with `version`, `commit`, `dirty`, `branch` (test if dirty, else release), `sha256`, and `alreadyUploaded` when the server already has a release with that exact file. The build to publish is the one you just made: the newest entry.
+- `local`: each AppImage in the repo root, newest first, with `version`, `arch` (`amd64` or `arm64`), `commit`, `dirty`, `branch` (test if dirty, else release), `sha256`, and `alreadyUploaded` when the server already has a release with that exact file. The builds to publish are the two you just made: the newest `amd64` and `arm64` entries, which have the same `version`.
 - `latestByBranch`: the newest published release on each branch, including the `commit` from its tag.
 
 If it prints an `error`:
 - Missing `DROP_UPDATER_URL`: ask the user for their server's URL (e.g. `https://drop.example.lan`) and write it to `.claude/updater.env` as `DROP_UPDATER_URL=...`. That file is gitignored by the repo's `*.env` rule.
 - Missing token or HTTP 403: give the user the `tokenLink` from the output. It opens the admin Tokens page with the name and the `updater:read` + `updater:new` permissions pre-filled. Ask them to create the token and either paste it to you (you write `DROP_UPDATER_TOKEN=...` into `.claude/updater.env`) or add it to the file themselves. Never echo the token back in chat or put it in a commit.
 
-If the new build is `alreadyUploaded` (the tree is byte-for-byte what's already on the server), say so and stop.
+If both new builds are `alreadyUploaded` (the tree is byte-for-byte what's already on the server), say so and stop. If only one is, publish just the other one.
 
 Then:
-- **Tag**: the build's `version` exactly (e.g. `0.4.0-g1a2b3c4` or `0.4.0-g1a2b3c4.dirty`). It is the version the running client reports, and the AppImage's file name carries the same string. Don't shorten or prettify it.
+- **Tag**: the builds' `version` exactly (e.g. `0.4.0-g1a2b3c4` or `0.4.0-g1a2b3c4.dirty`), the same for both architectures. It is the version the running client reports, and the AppImages' file names carry the same string. Don't shorten or prettify it.
 - **Branch**: decided by `dirty`. A dirty build goes to `test`; a clean one goes to `release`. Only override it if the user says so.
 
 ## 3. Draft release notes
@@ -67,6 +67,7 @@ Publishing puts the notes in front of every client on that branch, so show the u
 
 ```
 Drop Desktop Client_0.4.0-g1a2b3c4_amd64.AppImage
+Drop Desktop Client_0.4.0-g1a2b3c4_arm64.AppImage
   tag: 0.4.0-g1a2b3c4 · branch: release · published (or: draft) · required: no
   covers: 14 commits, 9f02d1e..1a2b3c4 (since the last release build, 0.3.9-g9f02d1e)
   notes:
@@ -76,8 +77,8 @@ Drop Desktop Client_0.4.0-g1a2b3c4_amd64.AppImage
 Apply any edits they ask for. Then write the notes to a temp file in your scratchpad and run:
 
 ```bash
-node .claude/skills/publish-client-update/publish.mjs upload "<file>" \
+node .claude/skills/publish-client-update/publish.mjs upload "<amd64 file>" "<arm64 file>" \
   --tag "<tag>" --branch <release|test> --notes-file "<notes.md>" [--draft] [--required]
 ```
 
-The upload streams the whole file (~150 MB), so give the command a timeout of several minutes. The server reads the architecture from the AppImage itself and rejects files that aren't type-2 AppImages. Report the result's `tag`, `branch`, and `page` (the release's admin page link). If an upload fails, show the error. Don't retry more than once.
+It uploads every file before creating any release, then creates one release per file with the same tag, branch and notes, so a failed upload publishes neither. Each upload streams the whole file (~150 MB), so give the command a timeout of ten minutes or more. The server reads the architecture from each AppImage itself and rejects files that aren't type-2 AppImages. The result is a JSON array with one release per architecture: report each one's `arch`, `tag`, `branch`, and `page` (the release's admin page link). If an upload fails, show the error. Don't retry more than once.

@@ -5,7 +5,11 @@
 #
 # The script builds this image, then mounts the repo into a container and
 # runs `pnpm tauri build` inside it. Output lands in the repo root as
-# Drop.Desktop.Client_<version>_amd64.AppImage (or similar, per tauri-bundler).
+# "Drop Desktop Client_<version>_<amd64|arm64>.AppImage".
+#
+# One stage per target architecture, both on an x86_64 base: `amd64` builds
+# natively, `arm64` cross-compiles (see that stage). build_appimage.sh picks
+# one with --target.
 #
 # Base is Ubuntu 24.04 LTS: its glibc (2.39) is the floor the AppImage runs
 # on, old enough for SteamOS and current LTS distros, and it keeps receiving
@@ -15,8 +19,14 @@
 # the belief that later releases abort with "Could not create default EGL
 # display: EGL_BAD_PARAMETER". That crash came from the AppImage bundling the
 # build distro's libwayland next to the host's Mesa - build_appimage.sh now
-# strips those, see step 4 there.)
-FROM ubuntu:24.04
+# strips those, see appimage-output-plugin.sh.)
+
+# What the app links against (and the bundler copies into the AppImage),
+# installed for the target architecture by its stage at the bottom.
+ARG TAURI_LIBS="libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
+        libappindicator3-dev librsvg2-dev libssl-dev libsoup-3.0-dev"
+
+FROM docker.io/library/ubuntu:24.04 AS base
 
 # Pinned versions of everything this image fetches by URL, hoisted out of the
 # RUN lines below so there's one obvious place to bump them and nothing is
@@ -36,15 +46,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/root/.rustup \
     PATH=/root/.cargo/bin:$PATH
 
-# System deps: Tauri's Linux bundler deps (webkitgtk/appindicator/rsvg/patchelf)
-# plus Go, make and clang/libclang (needed to build the vendored tailscale
-# cgo bindings via bindgen in src-tauri/tailscale).
+# Build tools, for the machine doing the build: Tauri's bundler needs
+# patchelf/xdg-utils, plus Go, make and clang/libclang (needed to build the
+# vendored tailscale cgo bindings via bindgen in src-tauri/tailscale).
+# The libraries the app links against are per architecture (TAURI_LIBS).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates git build-essential make pkg-config \
         clang llvm-dev libclang-dev golang-go \
-        libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev \
-        libappindicator3-dev librsvg2-dev \
-        libssl-dev libsoup-3.0-dev \
         patchelf xdg-utils file \
     && rm -rf /var/lib/apt/lists/*
 
@@ -60,7 +68,7 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
     && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 
 # Vendored umu-run + winetricks, injected into the AppImage by
-# build_appimage.sh (see the post-processing step there). This is what
+# appimage-output-plugin.sh, which build_appimage.sh runs. This is what
 # makes Proton/winetricks features in the app work on systems like the
 # Steam Deck, where there's no distro package manager to install
 # umu-launcher/winetricks system-wide. umu-run is a self-contained Python
@@ -77,15 +85,79 @@ RUN mkdir -p /opt/drop-vendor \
         "https://raw.githubusercontent.com/Winetricks/winetricks/${WINETRICKS_VERSION}/src/winetricks" \
     && chmod +x /opt/drop-vendor/umu-run /opt/drop-vendor/winetricks
 
-# appimagetool, used by build_appimage.sh to repack the AppImage after
+# appimagetool, used by appimage-output-plugin.sh to pack the AppImage after
 # injecting the vendored tools above.
 RUN curl -fsSL -o /usr/local/bin/appimagetool \
         https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
     && chmod +x /usr/local/bin/appimagetool
 
+WORKDIR /workspace
+
+# ── amd64: a native build ─────────────────────────────────────────────────────
+FROM base AS amd64
+ARG TAURI_LIBS
+
+RUN apt-get update && apt-get install -y --no-install-recommends $TAURI_LIBS \
+    && rm -rf /var/lib/apt/lists/*
+
 # The AppImage runtime appimagetool prepends to the image. It downloads this
-# itself on every run otherwise; build_appimage.sh passes it as --runtime-file.
+# itself on every run otherwise; appimage-output-plugin.sh passes it as
+# --runtime-file.
 RUN curl -fsSL -o /opt/appimage-runtime-x86_64 \
         https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
 
-WORKDIR /workspace
+# ── arm64: cross-compiled on x86_64 ───────────────────────────────────────────
+# The compilers run natively; only the libraries are arm64, from Ubuntu's
+# ports archive through dpkg multiarch (amd64 keeps the main archive, which
+# has no arm64). Tauri's bundler then runs its *arm64* linuxdeploy over the
+# result, which build_appimage.sh runs under qemu-user - registered with a
+# binfmt_misc of the build's own user namespace, so nothing is set up on the
+# host. The amd64 libraries are not installed here: the bundler's GTK plugin
+# copies whatever it finds of some of them, and must only find arm64 ones.
+FROM base AS arm64
+ARG TAURI_LIBS
+
+RUN sed -i '/^Components:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources \
+    && printf '%s\n' \
+        'Types: deb' \
+        'URIs: http://ports.ubuntu.com/ubuntu-ports/' \
+        'Suites: noble noble-updates noble-security' \
+        'Components: main universe restricted multiverse' \
+        'Architectures: arm64' \
+        'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/ubuntu-ports.sources \
+    && dpkg --add-architecture arm64 \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        crossbuild-essential-arm64 qemu-user-static \
+        $(for lib in $TAURI_LIBS; do echo "$lib:arm64"; done) \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add aarch64-unknown-linux-gnu
+
+RUN curl -fsSL -o /opt/appimage-runtime-aarch64 \
+        https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-aarch64
+
+# Stand-ins the AppImage tooling finds on PATH (build_appimage.sh puts this
+# directory first for an arm64 build), each answering for arm64 where the
+# real thing would answer for the build machine:
+# - ldd: glibc's script only knows the build machine's loader and calls an
+#   arm64 binary "not a dynamic executable"; linuxdeploy finds every
+#   library it bundles with it. The arm64 loader lists them instead.
+# - gdk-pixbuf-query-loaders, gtk-query-immodules-3.0: the GTK plugin runs
+#   these to write the AppImage's loader caches, and looks for them under
+#   /usr/lib/$(uname -m)-linux-gnu, which is the x86_64 directory here.
+RUN mkdir -p /opt/cross-arm64 \
+    && printf '%s\n' \
+        '#!/bin/sh' \
+        '# ldd for arm64 binaries (Dockerfile.build); anything else goes to the real one.' \
+        'if [ "$#" -eq 1 ] && [ "$(od -An -tx1 -j18 -N2 "$1" 2>/dev/null)" = " b7 00" ]; then' \
+        '    LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/usr/lib/aarch64-linux-gnu" \' \
+        '        exec /lib/ld-linux-aarch64.so.1 --list "$1"' \
+        'fi' \
+        'exec /usr/bin/ldd "$@"' \
+        > /opt/cross-arm64/ldd \
+    && chmod +x /opt/cross-arm64/ldd \
+    && ln -s /usr/lib/aarch64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders /opt/cross-arm64/ \
+    && ln -s "$(find /usr/lib/aarch64-linux-gnu -name gtk-query-immodules-3.0 -type f | head -n1)" /opt/cross-arm64/ \
+    && test -e /opt/cross-arm64/gdk-pixbuf-query-loaders \
+    && test -e /opt/cross-arm64/gtk-query-immodules-3.0

@@ -5,9 +5,12 @@
 //       Local AppImages in the repo root (version, commit, dirty, sha256,
 //       whether the server already has them) and the newest release per
 //       branch, as JSON.
-//   node publish.mjs upload <file> --tag <tag> --branch release|test
+//   node publish.mjs upload <file>... --tag <tag> --branch release|test
 //                    --notes-file <path> [--required] [--draft]
-//       Uploads one build and creates the release. Prints the release as JSON.
+//       Uploads one or more builds of the same version (one per architecture)
+//       and creates a release for each, with the same tag, branch and notes.
+//       Every file is uploaded before any release is created, so a failed
+//       upload publishes nothing. Prints the releases as a JSON array.
 //   node publish.mjs token-link
 //       Prints the admin page link that creates a token with the right ACLs.
 //
@@ -105,9 +108,10 @@ function sha256(file) {
 function parseBuildName(name) {
   const match = name.match(/_(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)_([A-Za-z0-9]+)\.AppImage$/);
   const version = match?.[1] ?? null;
+  const arch = match?.[2] ?? null;
   const commit = version?.match(/-g([0-9a-f]{7,40})/)?.[1] ?? null;
   const dirty = /[.-]dirty\b/.test(version ?? name);
-  return { version, commit, dirty, branch: dirty ? "test" : "release" };
+  return { version, arch, commit, dirty, branch: dirty ? "test" : "release" };
 }
 
 async function status(config) {
@@ -169,8 +173,9 @@ function parseArgs(argv) {
 
 async function upload(config, args) {
   requireConfig(config);
-  const file = args._[0];
-  if (!file || !fs.existsSync(file)) fail(`No such file: ${file}`);
+  const files = args._;
+  if (files.length === 0) fail("No file given");
+  for (const file of files) if (!fs.existsSync(file)) fail(`No such file: ${file}`);
   if (!args.tag) fail("--tag is required");
   if (!["release", "test"].includes(args.branch))
     fail("--branch must be release or test");
@@ -178,53 +183,62 @@ async function upload(config, args) {
     ? fs.readFileSync(args["notes-file"], "utf-8")
     : "";
 
-  const size = fs.statSync(file).size;
-  const query = new URLSearchParams({
-    target: "linux-appimage",
-    fileName: path.basename(file),
+  // One release per architecture: catch two of the same before uploading,
+  // from the ELF header the server reads it from too.
+  const machines = files.map((file) => {
+    const fd = fs.openSync(file, "r");
+    const header = Buffer.alloc(20);
+    fs.readSync(fd, header, 0, 20, 0);
+    fs.closeSync(fd);
+    return header.readUInt16LE(18);
   });
-  const uploaded = await api(
-    config,
-    "PUT",
-    `/api/v1/admin/updater/upload?${query}`,
-    {
-      body: Readable.toWeb(fs.createReadStream(file)),
-      duplex: "half",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(size),
-      },
-    },
-  );
+  if (new Set(machines).size !== machines.length)
+    fail(`Two of the files are builds for the same architecture: ${files.join(", ")}`);
 
-  const release = await api(config, "POST", "/api/v1/admin/updater", {
-    body: JSON.stringify({
-      uploadId: uploaded.uploadId,
-      tag: args.tag,
-      arch: uploaded.arch,
-      branch: args.branch,
-      notes,
-      required: !!args.required,
-      publish: !args.draft,
-    }),
-    headers: { "Content-Type": "application/json" },
-  });
+  const uploads = [];
+  for (const file of files) {
+    const size = fs.statSync(file).size;
+    const query = new URLSearchParams({
+      target: "linux-appimage",
+      fileName: path.basename(file),
+    });
+    uploads.push(
+      await api(config, "PUT", `/api/v1/admin/updater/upload?${query}`, {
+        body: Readable.toWeb(fs.createReadStream(file)),
+        duplex: "half",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": String(size),
+        },
+      }),
+    );
+  }
+  const releases = [];
+  for (const uploaded of uploads) {
+    const release = await api(config, "POST", "/api/v1/admin/updater", {
+      body: JSON.stringify({
+        uploadId: uploaded.uploadId,
+        tag: args.tag,
+        arch: uploaded.arch,
+        branch: args.branch,
+        notes,
+        required: !!args.required,
+        publish: !args.draft,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+    releases.push({
+      id: release.id,
+      tag: release.tag,
+      branch: release.branchSlug,
+      arch: release.arch,
+      sha256: release.sha256,
+      published: !!release.publishedAt,
+      page: `${config.url}/admin/settings/updater/${release.id}`,
+    });
+  }
 
-  console.log(
-    JSON.stringify(
-      {
-        id: release.id,
-        tag: release.tag,
-        branch: release.branchSlug,
-        arch: release.arch,
-        sha256: release.sha256,
-        published: !!release.publishedAt,
-        page: `${config.url}/admin/settings/updater/${release.id}`,
-      },
-      null,
-      2,
-    ),
-  );
+  console.log(JSON.stringify(releases, null, 2));
 }
 
 const [command, ...rest] = process.argv.slice(2);
@@ -241,6 +255,6 @@ switch (command) {
     console.log(tokenLink(config));
     break;
   default:
-    console.error("usage: publish.mjs status | upload <file> --tag T --branch B --notes-file F [--required] [--draft] | token-link");
+    console.error("usage: publish.mjs status | upload <file>... --tag T --branch B --notes-file F [--required] [--draft] | token-link");
     process.exit(2);
 }

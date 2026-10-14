@@ -2,12 +2,16 @@
 # Builds openbox, picom and tint2 (the submodules in this directory) into a
 # self-contained, relocatable prefix for the nested session:
 #
-#   desktop/vendor/out/nested-session/
+#   desktop/vendor/out/nested-session/          (amd64)
+#   desktop/vendor/out/nested-session-arm64/    (arm64)
 #     bin/   openbox picom tint2       (RPATH $ORIGIN/../lib)
 #     lib/   their shared libraries    (RPATH $ORIGIN)
 #
 # Usage:
-#   bash desktop/vendor/build.sh
+#   bash desktop/vendor/build.sh [amd64|arm64]     (default amd64)
+#
+# arm64 is cross-compiled on the x86_64 build machine, against Ubuntu's arm64
+# libraries (see ./Dockerfile); nothing is emulated.
 #
 # Runs in Docker (see ./Dockerfile) - nothing is built on or installed to the
 # host. build_appimage.sh copies the prefix into the AppImage; for testing
@@ -23,8 +27,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VENDOR_DIR="${SCRIPT_DIR#"$REPO_ROOT"/}"
-OUT_DIR="$SCRIPT_DIR/out/nested-session"
-BUILDER_IMAGE="drop-nested-session-builder"
+TARGET_ARCH="${1:-${DROP_TARGET_ARCH:-amd64}}"
+case "$TARGET_ARCH" in
+    amd64) OUT_NAME=nested-session TRIPLE=x86_64-linux-gnu ;;
+    arm64) OUT_NAME=nested-session-arm64 TRIPLE=aarch64-linux-gnu ;;
+    *) echo "error: unknown architecture '$TARGET_ARCH' (amd64 or arm64)" >&2; exit 2 ;;
+esac
+OUT_DIR="$SCRIPT_DIR/out/$OUT_NAME"
+BUILDER_IMAGE="drop-nested-session-builder-$TARGET_ARCH"
 
 # ── Docker wrapper ─────────────────────────────────────────────────────────────
 if [ -z "${DROP_IN_DOCKER:-}" ]; then
@@ -54,12 +64,12 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     if [ -z "${DROP_VENDOR_REBUILD:-}" ] \
         && [ -x "$OUT_DIR/bin/openbox" ] \
         && [ "$(cat "$stamp" 2>/dev/null)" = "$inputs_hash" ]; then
-        echo ">>> Nested-session tools are up to date ($VENDOR_DIR/out/nested-session)"
+        echo ">>> Nested-session tools are up to date ($VENDOR_DIR/out/$OUT_NAME)"
         exit 0
     fi
 
-    echo ">>> Building nested-session builder image..."
-    docker build -t "$BUILDER_IMAGE" "$SCRIPT_DIR"
+    echo ">>> Building nested-session builder image ($TARGET_ARCH)..."
+    docker build --target "$TARGET_ARCH" -t "$BUILDER_IMAGE" "$SCRIPT_DIR"
 
     # Keep the output owned by the invoking user. Rootful Docker needs
     # --user for that; rootless Docker already maps the container's root to
@@ -73,11 +83,12 @@ if [ -z "${DROP_IN_DOCKER:-}" ]; then
     # The source tree is mounted read-only: every build happens in a copy, so
     # openbox's bootstrap and meson/cmake can't leave generated files behind
     # in the submodules.
-    echo ">>> Building openbox, picom and tint2 inside Docker..."
+    echo ">>> Building openbox, picom and tint2 ($TARGET_ARCH) inside Docker..."
     mkdir -p "$SCRIPT_DIR/out"
     docker run --rm \
         "${user_args[@]}" \
         -e DROP_IN_DOCKER=1 \
+        -e DROP_TARGET_ARCH="$TARGET_ARCH" \
         -e HOME=/tmp \
         -v "$REPO_ROOT":/workspace:ro \
         -v "$SCRIPT_DIR/out":/out \
@@ -99,6 +110,34 @@ BUILD=/tmp/build
 # has to be somewhere to install to before the tree is made relocatable.
 PREFIX=/tmp/prefix
 JOBS="$(nproc)"
+
+# Cross-compiling (arm64): the compilers are the $TRIPLE- ones, and
+# pkg-config looks only at that architecture's .pc files. Each build system
+# is told below in its own way; a native build passes none of it, since
+# e.g. autoconf given --host for the machine it runs on still assumes a
+# cross build.
+CROSS=""
+if [ "$TRIPLE" != "$(gcc -dumpmachine)" ]; then
+    CROSS=1
+    export PKG_CONFIG_LIBDIR="/usr/lib/$TRIPLE/pkgconfig:/usr/share/pkgconfig"
+    cat > /tmp/meson-cross.txt <<EOF
+[binaries]
+c = '$TRIPLE-gcc'
+cpp = '$TRIPLE-g++'
+ar = '$TRIPLE-ar'
+strip = '$TRIPLE-strip'
+pkg-config = 'pkg-config'
+
+[properties]
+pkg_config_libdir = ['/usr/lib/$TRIPLE/pkgconfig', '/usr/share/pkgconfig']
+
+[host_machine]
+system = 'linux'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
+EOF
+fi
 
 rm -rf "$BUILD" "$PREFIX"
 mkdir -p "$BUILD" "$PREFIX"
@@ -130,6 +169,7 @@ echo ">>> openbox"
     # here needs them, so stand in empty ones make will treat as up to date.
     for page in doc/*.1.sgml; do : > "${page%.sgml}.in"; done
     ./configure --prefix="$PREFIX" \
+        ${CROSS:+--host=$TRIPLE} \
         --disable-nls \
         --disable-startup-notification \
         --disable-imlib2 \
@@ -144,6 +184,7 @@ echo ">>> picom"
 (
     cd "$BUILD/picom"
     meson setup build --prefix="$PREFIX" --buildtype=release --wrap-mode=nodownload \
+        ${CROSS:+--cross-file /tmp/meson-cross.txt} \
         -Dopengl=false -Ddbus=false -Dregex=false \
         -Dcompton=false -Dwith_docs=false
     ninja -C build -j"$JOBS"
@@ -153,7 +194,13 @@ echo ">>> picom"
 echo ">>> tint2"
 (
     cd "$BUILD/tint2"
+    cmake_cross=()
+    if [ -n "$CROSS" ]; then
+        cmake_cross=(-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64
+            -DCMAKE_C_COMPILER="$TRIPLE-gcc" -DCMAKE_CXX_COMPILER="$TRIPLE-g++")
+    fi
     cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_BUILD_TYPE=Release \
+        "${cmake_cross[@]}" \
         -DENABLE_TINT2CONF=OFF -DENABLE_EXTRA_THEMES=OFF -DENABLE_RSVG=OFF \
         -DENABLE_SN=OFF -DENABLE_BATTERY=OFF -DENABLE_UEVENT=OFF
     cmake --build build -j"$JOBS"
@@ -180,13 +227,40 @@ is_host_library() {
     esac
 }
 
-# Resolve against the build prefix first so openbox's own libraries are found.
-export LD_LIBRARY_PATH="$PREFIX/lib"
+# Every library they need, directly or through another bundled one. Read from
+# the ELF headers (readelf), not by ldd, which runs the binary's own loader
+# and so cannot look at a cross-compiled one. Searched like the loader would:
+# the build prefix first, so openbox's own libraries are found, then the
+# target architecture's system directories.
+find_library() {
+    local dir
+    for dir in "$PREFIX/lib" "/usr/lib/$TRIPLE" "/lib/$TRIPLE" /usr/lib /lib; do
+        if [ -e "$dir/$1" ]; then
+            echo "$dir/$1"
+            return 0
+        fi
+    done
+    echo "error: $1 not found for $TRIPLE" >&2
+    return 1
+}
+# Host libraries are walked too, without being copied, as ldd would: what
+# they pull in that isn't on the host list itself (libXau, via libxcb) is.
+declare -A seen=()
+pending=()
 for binary in "$STAGE"/bin/* "$STAGE"/lib/libob*.so*; do
-    [ -L "$binary" ] && continue
-    ldd "$binary" | awk '/=> \// { print $1, $3 }' | while read -r name path; do
-        is_host_library "$name" && continue
-        [ -e "$STAGE/lib/$name" ] || cp -L "$path" "$STAGE/lib/$name"
+    [ -L "$binary" ] || pending+=("$binary")
+done
+while [ "${#pending[@]}" -gt 0 ]; do
+    binary="${pending[0]}"
+    pending=("${pending[@]:1}")
+    for name in $(readelf -d "$binary" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+        [ -n "${seen[$name]:-}" ] && continue
+        seen[$name]=1
+        path="$(find_library "$name")"
+        if ! is_host_library "$name"; then
+            [ -e "$STAGE/lib/$name" ] || cp -L "$path" "$STAGE/lib/$name"
+        fi
+        pending+=("$path")
     done
 done
 
@@ -197,7 +271,7 @@ for library in "$STAGE"/lib/*; do
     [ -L "$library" ] && continue
     patchelf --set-rpath '$ORIGIN' "$library"
 done
-strip --strip-unneeded "$STAGE"/bin/* "$STAGE"/lib/* 2>/dev/null || true
+$TRIPLE-strip --strip-unneeded "$STAGE"/bin/* "$STAGE"/lib/* 2>/dev/null || true
 
 # Licences travel with the binaries.
 mkdir -p "$STAGE/licenses"
@@ -206,7 +280,7 @@ cp "$SRC/tint2/COPYING" "$STAGE/licenses/tint2-COPYING"
 cp -r "$SRC/picom/LICENSES" "$STAGE/licenses/picom"
 cp "$SRC/libconfig/COPYING.LIB" "$STAGE/licenses/libconfig-COPYING.LIB"
 
-rm -rf /out/nested-session
-cp -a "$STAGE" /out/nested-session
+rm -rf "/out/$OUT_NAME"
+cp -a "$STAGE" "/out/$OUT_NAME"
 echo ">>> bundled libraries:"
-ls /out/nested-session/lib
+ls "/out/$OUT_NAME/lib"

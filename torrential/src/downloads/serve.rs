@@ -14,7 +14,7 @@ use bytes::Bytes;
 use dashmap::{DashMap, mapref::one::RefMut};
 use droplet_rs::{
     manifest::ChunkData,
-    versions::types::{MinimumFileObject, VersionFile},
+    versions::types::{MinimumFileObject, VersionBackend, VersionFile},
 };
 use futures_util::{Stream, StreamExt, stream};
 use log::{error, info};
@@ -74,41 +74,45 @@ pub async fn serve_file(
 ) -> Result<impl IntoResponse, StatusCode> {
     let context_cache = &state.context_cache;
 
-    let mut context =
-        get_or_create_context(&state, context_cache, game_id.clone(), version_name.clone()).await?;
-    context.reset_last_access();
+    // Everything needed to serve the chunk is taken out of the cache entry
+    // here, so that the reference into the map is released before the body
+    // below is streamed.
+    let (backend, key, chunk_data) = {
+        let mut context =
+            get_or_create_context(&state, context_cache, game_id.clone(), version_name.clone())
+                .await?;
+        context.reset_last_access();
 
-    let lookup = lookup_chunk(&chunk_id, &context);
-    let chunk_data = match lookup {
-        Ok(chunk_data) => chunk_data,
-        Err(status) => {
-            // The chunk isn't in the manifest we have cached for this version.
-            // Usually that means the version's files were resynced/replaced on
-            // the server since we built this context, and the client is
-            // (correctly) asking for chunks from the new manifest. Drop the
-            // cached context and rebuild it from the server before deciding
-            // the chunk really doesn't exist.
-            //
-            // Without this, the stale context sticks around indefinitely -
-            // every failing request refreshes its TTL, so it never gets
-            // cleaned up, and the client can never install that game again.
-            if !context.may_be_stale() {
-                return Err(status);
+        match lookup_chunk(&chunk_id, &context) {
+            Ok(chunk_data) => (context.backend.clone(), context.manifest.key, chunk_data),
+            Err(status) => {
+                // The chunk isn't in the manifest we have cached for this
+                // version. Usually that means the version's files were
+                // resynced/replaced on the server since we built this context,
+                // and the client is (correctly) asking for chunks from the new
+                // manifest. Drop the cached context and rebuild it from the
+                // server before deciding the chunk really doesn't exist.
+                //
+                // Without this, the stale context sticks around indefinitely -
+                // every failing request refreshes its TTL, so it never gets
+                // cleaned up, and the client can never install that game again.
+                if !context.may_be_stale() {
+                    return Err(status);
+                }
+
+                // Must not be holding a reference into the map when we remove.
+                drop(context);
+                info!(
+                    "chunk {chunk_id} missing from cached manifest for {game_id}/{version_name}, rebuilding context"
+                );
+                context_cache.remove(&(game_id.clone(), version_name.clone()));
+
+                let mut rebuilt =
+                    get_or_create_context(&state, context_cache, game_id, version_name).await?;
+                rebuilt.reset_last_access();
+                let chunk_data = lookup_chunk(&chunk_id, &rebuilt)?;
+                (rebuilt.backend.clone(), rebuilt.manifest.key, chunk_data)
             }
-
-            // Must not be holding a reference into the map when we remove.
-            drop(context);
-            info!(
-                "chunk {chunk_id} missing from cached manifest for {game_id}/{version_name}, rebuilding context"
-            );
-            context_cache.remove(&(game_id.clone(), version_name.clone()));
-
-            let mut rebuilt =
-                get_or_create_context(&state, context_cache, game_id, version_name).await?;
-            rebuilt.reset_last_access();
-            let chunk_data = lookup_chunk(&chunk_id, &rebuilt)?;
-            context = rebuilt;
-            chunk_data
         }
     };
     if chunk_data.files.len() >= *SEMPAHORE_COUNT {
@@ -123,7 +127,7 @@ pub async fn serve_file(
 
     for file_entry in &chunk_data.files {
         let reader = get_file_reader(
-            &mut context,
+            &backend,
             file_entry.filename.clone(),
             file_entry.start,
             file_entry.start + file_entry.length,
@@ -136,7 +140,7 @@ pub async fn serve_file(
     }
 
     let stream = stream::iter(streams).flatten();
-    let mut cipher = Aes128Ctr64LE::new(&context.manifest.key.into(), &chunk_data.iv.into());
+    let mut cipher = Aes128Ctr64LE::new(&key.into(), &chunk_data.iv.into());
     let encrypted_stream = stream.chunks(16).map(move |raw| -> Result<Bytes, Error> {
         let data: Result<Vec<Bytes>, Error> = raw.into_iter().collect();
         let mut data = data?.concat();
@@ -175,13 +179,12 @@ fn lookup_chunk(
         .ok_or(StatusCode::NOT_FOUND)
 }
 async fn get_file_reader(
-    context: &mut RefMut<'_, (String, String), DownloadContext>,
+    backend: &Arc<dyn VersionBackend + Send + Sync + 'static>,
     relative_filename: String,
     start: usize,
     end: usize,
 ) -> Result<Box<dyn MinimumFileObject>, StatusCode> {
-    context
-        .backend
+    backend
         .reader(
             &VersionFile {
                 relative_filename: relative_filename.clone(),

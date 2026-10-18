@@ -1,5 +1,6 @@
 use std::{
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -27,7 +28,7 @@ const MIN_REBUILD_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct DownloadContext {
     pub(crate) manifest: Manifest,
-    pub(crate) backend: Box<dyn VersionBackend + Send + Sync + 'static>,
+    pub(crate) backend: Arc<dyn VersionBackend + Send + Sync + 'static>,
     last_access: Instant,
     created: Instant,
 }
@@ -59,7 +60,7 @@ pub async fn create_download_context(
 
     let download_context = DownloadContext {
         manifest: convert_protobuf_manifest(version_data.manifest.unwrap()),
-        backend,
+        backend: Arc::from(backend),
         last_access: Instant::now(),
         created: Instant::now(),
     };

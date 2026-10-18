@@ -331,7 +331,7 @@ impl ProcessHandler for UMUNativeLauncher {
             .map_or("", |v| v);
 
         let game_id = if umu_id_override.is_empty() {
-            &game_version.version_id
+            "umu-default"
         } else {
             umu_id_override
         };
@@ -393,7 +393,7 @@ impl ProcessHandler for UMUCompatLauncher {
             .map_or("", |v| v);
 
         let game_id = if umu_id_override.is_empty() {
-            &game_version.version_id
+            "umu-default"
         } else {
             umu_id_override
         };

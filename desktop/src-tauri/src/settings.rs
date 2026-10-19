@@ -28,12 +28,15 @@ pub fn delete_download_dir(index: usize) {
 }
 
 #[tauri::command]
-pub fn add_download_dir(new_dir: PathBuf) -> Result<(), DownloadManagerError<()>> {
+pub fn add_download_dir(
+    new_dir: PathBuf,
+    allow_non_empty: bool,
+) -> Result<(), DownloadManagerError<()>> {
     // Check the new directory is all good
     let new_dir_path = Path::new(&new_dir);
     if new_dir_path.exists() {
         let dir_contents = new_dir_path.read_dir()?;
-        if dir_contents.count() != 0 {
+        if !allow_non_empty && dir_contents.count() != 0 {
             return Err(Error::new(
                 ErrorKind::DirectoryNotEmpty,
                 "Selected directory cannot contain any existing files",

@@ -3,6 +3,7 @@ node_modules/
 drop-custom.tar.gz
 /*.AppImage
 .pnpm-store/
+.flatpak-builder
 
 # Per-machine devcontainer settings (.env at the top, and the link to it in
 # .devcontainer/). server/.env is covered too, as it was by server/.gitignore.

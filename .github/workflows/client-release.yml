@@ -13,9 +13,10 @@ on:
 # This workflow will trigger on each push to the `release` branch to create or update a GitHub release, build your app, and upload the artifacts to the release.
 
 jobs:
-  # High/critical advisories in what the client ships (desktop's production
-  # deps and the Nuxt view's, which has its own lockfile) stop the release.
-  # Same gate as build_appimage.sh. Reads only the lockfiles.
+  # Advisories in what the client ships stop the release: the desktop
+  # production deps and the Nuxt view's (its own lockfile) through pnpm, and
+  # the Tauri crate's through cargo-deny. Same gate as build_appimage.sh and
+  # the Rust CI workflows. Reads only the lockfiles.
   audit:
     runs-on: ubuntu-latest
     permissions:
@@ -33,6 +34,15 @@ jobs:
 
       - name: audit desktop view
         run: pnpm --dir desktop/main audit --prod --audit-level high
+
+      # Accept one that can't be fixed by updating with `[advisories] ignore`
+      # in deny.toml, with a comment saying why.
+      - name: audit desktop crates
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: desktop/src-tauri/Cargo.toml
+          arguments: --config deny.toml
+          command: check advisories
 
   publish-tauri:
     needs: audit

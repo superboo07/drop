@@ -9,6 +9,7 @@ on:
       - "libraries/droplet_types/**"
       - "libraries/libarchive/**"
       - ".github/workflows/torrential-ci.yml"
+      - "deny.toml"
   pull_request:
     branches: [develop]
     paths:
@@ -17,7 +18,11 @@ on:
       - "libraries/droplet_types/**"
       - "libraries/libarchive/**"
       - ".github/workflows/torrential-ci.yml"
+      - "deny.toml"
   workflow_dispatch:
+  # So a newly published advisory is caught even when nothing has changed.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
@@ -55,3 +60,21 @@ jobs:
 
       - name: Run tests
         run: cargo test --verbose
+
+  advisories:
+    name: Dependency advisories
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Fails on a RustSec advisory against anything torrential links. Runs on a
+      # schedule as well as on changes, because an advisory can be published
+      # against a lockfile that hasn't moved. Accept one that doesn't apply
+      # with `[advisories] ignore` in deny.toml.
+      - name: Check advisories
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: torrential/Cargo.toml
+          arguments: --config deny.toml
+          command: check advisories

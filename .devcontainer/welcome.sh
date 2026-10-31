@@ -118,6 +118,7 @@ Ready. Postgres is the `db` service (DATABASE_URL is set). Commands:
   pnpm --filter=drop run typecheck | lint
   cargo clippy --manifest-path torrential/Cargo.toml     # or cli/, libraries/droplet/
   cargo test --manifest-path libraries/droplet/Cargo.toml --all-features --all
+  cargo deny --manifest-path torrential/Cargo.toml --config deny.toml check advisories
   cd desktop && pnpm tauri dev                    # opens on your desktop (Wayland)
   cargo clippy --manifest-path desktop/src-tauri/Cargo.toml
   (cd backend && go build ./core/... && GOWORK=off go build .)   # go.work only lists core

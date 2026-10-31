@@ -148,6 +148,13 @@ RUN set -eu; \
 	rm -f rustup-init; \
 	rustc --version
 
+# cargo-deny, for the dependency advisory check the Rust CI workflows and the
+# root Dockerfile run (deny.toml). Here so `cargo deny ... check advisories`
+# works without a per-container `cargo install`, which lands in
+# /usr/local/cargo/bin -- part of the image, not one of the volumes, so it
+# would be lost on every rebuild.
+RUN cargo install cargo-deny --locked && cargo deny --version
+
 # Go, for backend/ (backend/go.mod: `go 1.26.1`); trixie's golang is 1.24.
 # Checked against the sha256 go.dev publishes for the archive.
 ARG GO_VERSION=1.26.8

@@ -1,0 +1,52 @@
+# Dependency advisory policy for every Rust crate in the repo. It does for
+# cargo what `pnpm audit` already does for the JavaScript side: a build fails
+# rather than shipping a dependency with a known vulnerability.
+#
+# Each crate is its own cargo workspace, so it's checked on its own:
+#
+#   cargo deny --manifest-path torrential/Cargo.toml --config deny.toml check advisories
+#
+# CI runs that per crate, and the Docker build runs it for `torrential`
+# against a fresh advisory database, so a newly published advisory fails the
+# image even when nothing in the repo has changed.
+#
+# Fix one by updating what pulls it in -- `cargo update -p <crate>`, or
+# raising the parent's version when the fix is a semver-major away. Accept one
+# here only when no release anywhere in the tree fixes it.
+#
+# Licenses and duplicate versions are deliberately not checked: this file is
+# about vulnerabilities, and `cargo deny check advisories` is the only
+# subcommand run against it.
+
+[advisories]
+# A dependency resolving to a yanked version is a packaging mistake rather
+# than a vulnerability: worth seeing in the log, not worth failing a build.
+yanked = "warn"
+
+# Only fail on an unmaintained crate we depend on directly. Deep in a
+# dependency tree there is usually no release to move to and nothing to do
+# but wait for the parent, which isn't a reason to stop shipping -- an
+# unmaintained crate isn't a vulnerability. Vulnerabilities and unsoundness
+# fail wherever they are.
+unmaintained = "workspace"
+
+# Accepted advisories, by ID, each with a note saying why it doesn't reach us
+# and what would let us drop it again. Listing IDs rather than crates means
+# any *other* advisory against the same crate still fails.
+ignore = [
+    # Both reach us only through jsonwebtoken, which the desktop client uses
+    # to sign its ES384 request tokens, and neither has a release to move to:
+    # jsonwebtoken 11 still pulls the same p256/p384 0.13 and rsa 0.9, and
+    # RustCrypto's fixed line (elliptic-curve 0.14, ecdsa 0.17) has no stable
+    # release yet. Drop both once jsonwebtoken ships against it.
+
+    # crypto-bigint timing variability, reached by our own ES384 signing.
+    # Exploiting it needs timing measurements of the client signing with its
+    # key; we keep it listed rather than pretending it doesn't apply.
+    "RUSTSEC-2026-0387",
+
+    # rsa's Marvin attack needs RSA private-key operations. jsonwebtoken
+    # compiles rsa in for the RS*/PS* algorithms, which the client never
+    # uses -- it only ever signs ES384 -- so no RSA key is ever touched.
+    "RUSTSEC-2023-0071",
+]

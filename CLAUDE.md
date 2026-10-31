@@ -73,6 +73,7 @@ Same shape as a standalone Tauri 2 + Nuxt 3 app — see that project's own CLAUD
 - Format/lint/test (pattern used in CI for `libraries/droplet`, applies the same way to the others): `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-features --all --verbose`
 - `cli` and `desktop/src-tauri` pin Rust **nightly** via `rust-toolchain.toml`; `torrential`/`libraries/droplet*` don't pin a file but CI still uses nightly — match that locally.
 - `torrential` needs `libarchive-dev` (or equivalent) installed to link `libarchive` for `libarchive3-sys`.
+- Dependency advisories: `cargo deny --manifest-path <crate>/Cargo.toml --config deny.toml check advisories`. `deny.toml` at the root is the shared policy (advisories only — not licenses or duplicate versions), and accepts an advisory by ID with a reason. Droplet and torrential CI run it, and the root Dockerfile fails the server image on an advisory against torrential, the same way the `audit` stage does for `pnpm audit`. The client release runs it over `desktop/src-tauri` too, with two advisories accepted by ID because no release anywhere in that tree fixes them (both reach us via `jsonwebtoken`). Fix an advisory by updating what pulls it in; only add an `ignore` when nothing to update to exists, and say so there.
 
 ### Sites
 - `sites/docs`: Astro (`astro dev`/`astro build`)

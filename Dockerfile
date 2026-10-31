@@ -59,6 +59,33 @@ RUN pnpm --filter drop... --filter my-nuxt-layer... audit --prod --audit-level h
     && pnpm audit --dir /opt/prisma-cli --audit-level high \
     && touch /audit-passed
 
+### AUDIT TORRENTIAL'S DEPENDENCIES
+## The cargo half of the audit stage above: fails the build on a RustSec
+## advisory against anything torrential links, rather than shipping it.
+## Advisories are published after a Cargo.lock is, so this re-runs when
+## AUDIT_DATE changes (build-docker-image.sh passes today's date) -- an
+## unchanged lockfile alone would keep a passing result cached forever.
+## Accept an advisory that doesn't apply with `[advisories] ignore` in
+## deny.toml, with a comment saying why.
+FROM rustlang/rust:nightly-bookworm-slim AS torrential-audit
+## cargo-deny clones the RustSec advisory database with the git CLI, which
+## the slim image doesn't carry.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=drop-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=drop-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=drop-cargo-deny-target,target=/cargo-deny-target \
+    CARGO_TARGET_DIR=/cargo-deny-target cargo install cargo-deny --locked
+WORKDIR /audit
+COPY deny.toml ./
+COPY libraries ./libraries
+COPY torrential ./torrential
+ARG AUDIT_DATE
+RUN --mount=type=cache,id=drop-cargo-advisory-db,target=/usr/local/cargo/advisory-dbs \
+    cargo deny --manifest-path ./torrential/Cargo.toml --config ./deny.toml \
+    check advisories \
+    && touch /cargo-audit-passed
+
 ### BUILD TORRENTIAL
 # Bookworm-pinned to match the runtime image's glibc (a trixie build would not run on bookworm).
 FROM rustlang/rust:nightly-bookworm-slim AS torrential-build
@@ -172,8 +199,9 @@ ENV NGINX_CONFIG="/nginx.conf"
 # Nuxt's port
 ENV PORT=4000
 
-## Only to make the image depend on the audit stage; the file is empty, so
-## this layer stays cached whenever the audit passes.
+## Only to make the image depend on the audit stages; the files are empty, so
+## this layer stays cached whenever both audits pass.
 COPY --from=audit /audit-passed /
+COPY --from=torrential-audit /cargo-audit-passed /
 
 CMD ["sh", "/app/startup/launch.sh"]

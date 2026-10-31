@@ -13,7 +13,7 @@ use axum::{
 use bytes::Bytes;
 use dashmap::{DashMap, mapref::one::RefMut};
 use droplet_rs::{
-    manifest::ChunkData,
+    manifest::{ChunkData, FileEntry},
     versions::types::{MinimumFileObject, VersionBackend, VersionFile},
 };
 use futures_util::{Stream, StreamExt, stream};
@@ -126,13 +126,7 @@ pub async fn serve_file(
     let mut content_length = 0;
 
     for file_entry in &chunk_data.files {
-        let reader = get_file_reader(
-            &backend,
-            file_entry.filename.clone(),
-            file_entry.start,
-            file_entry.start + file_entry.length,
-        )
-        .await?;
+        let reader = get_file_reader(&backend, file_entry).await?;
 
         let stream = ReaderStream::new(reader);
         streams.push(stream);
@@ -180,24 +174,25 @@ fn lookup_chunk(
 }
 async fn get_file_reader(
     backend: &Arc<dyn VersionBackend + Send + Sync + 'static>,
-    relative_filename: String,
-    start: usize,
-    end: usize,
+    file_entry: &FileEntry,
 ) -> Result<Box<dyn MinimumFileObject>, StatusCode> {
     backend
         .reader(
             &VersionFile {
-                relative_filename: relative_filename.clone(),
-                permission: 0,
-                size: 0,
+                relative_filename: file_entry.filename.clone(),
+                permission: file_entry.permissions,
+                size: file_entry.length as u64,
+                // The manifest this entry came from arrived over a protocol
+                // with no field for a link's target, so there is nothing to
+                // pass on here; the backend settles it on disk instead.
                 symlink: None,
             },
-            start as u64,
-            end as u64,
+            file_entry.start as u64,
+            (file_entry.start + file_entry.length) as u64,
         )
         .await
         .map_err(|v| {
-            error!("reader error for '{relative_filename}': {v:?}");
+            error!("reader error for '{}': {v:#}", file_entry.filename);
             StatusCode::INTERNAL_SERVER_ERROR
         })
 }

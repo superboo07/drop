@@ -54,14 +54,24 @@ impl VersionBackend for PathVersionBackend {
         start: u64,
         end: u64,
     ) -> anyhow::Result<Box<dyn MinimumFileObject>> {
+        let pathbuf = self.base_dir.join(file.relative_filename.clone());
+
         // A link's content is its target, which is carried in the manifest
         // rather than as bytes. Opening it here would read whatever it points
-        // at and serve that as the link's content.
-        if file.symlink.is_some() {
+        // at and serve that as the link's content -- or fail outright when
+        // the target isn't there, as a virtualenv's `bin/python3` does.
+        //
+        // The flag alone isn't enough to go on: torrential builds a
+        // `VersionFile` for chunk serving out of a manifest that reached it
+        // over a protocol with no field for a link, so whether this is one is
+        // settled on disk as well. A link is never followed either way.
+        if file.symlink.is_some() || is_symlink(&pathbuf).await {
             return Ok(Box::new(tokio::io::empty()));
         }
 
-        let mut file = File::open(self.base_dir.join(file.relative_filename.clone())).await?;
+        let mut file = File::open(&pathbuf)
+            .await
+            .with_context(|| format!("couldn't open {}", pathbuf.display()))?;
 
         if start != 0 {
             file.seek(SeekFrom::Start(start)).await?;
@@ -130,4 +140,13 @@ impl VersionBackend for PathVersionBackend {
     fn require_whole_files(&self) -> bool {
         false
     }
+}
+
+/// Whether `path` is itself a symbolic link. A path that can't be stated at
+/// all isn't reported as one, so opening it raises the real error.
+async fn is_symlink(path: &std::path::Path) -> bool {
+    tokio::fs::symlink_metadata(path)
+        .await
+        .map(|metadata| metadata.is_symlink())
+        .unwrap_or(false)
 }

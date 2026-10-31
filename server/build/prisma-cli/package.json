@@ -2,6 +2,6 @@
   "private": true,
   "description": "The Prisma CLI the runtime image runs migrations with. Keep prisma in step with server/package.json. Its overrides are in the pnpm-workspace.yaml next to this file.",
   "dependencies": {
-    "prisma": "7.7.0"
+    "prisma": "7.10.1"
   }
 }

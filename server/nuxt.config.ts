@@ -211,15 +211,10 @@ export default defineNuxtConfig({
   },
 
   i18n: {
-    bundle: {
-      optimizeTranslationDirective: false,
-    },
     defaultLocale: "en-us",
-    lazy: true,
     strategy: "no_prefix",
     experimental: {
       localeDetector: "localeDetector.ts",
-      autoImportTranslationFunctions: true,
     },
     detectBrowserLanguage: {
       useCookie: true,

@@ -288,7 +288,6 @@ const applicationName = serverName || $t("drop.drop");
 useHead({
   htmlAttrs: {
     lang: i18nHead.value.htmlAttrs.lang,
-    // @ts-expect-error head.value.htmlAttrs.dir is not typed as strictly as it should be
     dir: i18nHead.value.htmlAttrs.dir,
   },
   titleTemplate(title) {

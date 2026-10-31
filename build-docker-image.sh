@@ -19,7 +19,10 @@ if docker --version 2>/dev/null | grep -qi podman; then
   PARALLEL=(--jobs 0)
 fi
 
-docker build -t "$IMAGE_TAG" "${PARALLEL[@]}" \
+# --pull=newer: the FROM lines name tags, not digests, so a local copy of
+# node:lts-bookworm-slim from months ago would otherwise be reused and the
+# security upgrade below would have that much more to catch up on.
+docker build -t "$IMAGE_TAG" --pull=newer "${PARALLEL[@]}" \
   --build-arg BUILD_DROP_VERSION="$BUILD_DROP_VERSION" \
   --build-arg BUILD_GIT_REF="$BUILD_GIT_REF" \
   --build-arg AUDIT_DATE="$(date -u +%F)" \

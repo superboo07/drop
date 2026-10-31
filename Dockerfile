@@ -129,8 +129,15 @@ ENV NUXT_TELEMETRY_DISABLED=1
 ##  - nginx: front-end proxy
 ##  - openssl + ca-certificates: required by Prisma's query engine on Debian
 ## pnpm itself is provided by corepack (enabled in the base stage)
-## upgrade picks up Debian security fixes (e.g. tzdata) newer than the base image.
-RUN apt-get update && apt-get upgrade -y \
+## upgrade picks up Debian security fixes newer than the base image. Debian
+## publishes those against an unchanged Dockerfile, so this layer is tied to
+## AUDIT_DATE like the audit stages are: without it the whole step stays
+## cached and the image keeps shipping the base image's packages however
+## long ago it was built -- a scan of one built this way found four packages
+## (openssl, libssl3, libpcre2, perl-base) still on superseded versions.
+ARG AUDIT_DATE
+RUN echo "security refresh for ${AUDIT_DATE:-unset}" \
+    && apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
     libarchive13 \
     p7zip-full \

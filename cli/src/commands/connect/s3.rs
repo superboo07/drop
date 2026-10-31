@@ -60,7 +60,9 @@ impl OperatorBuilder for S3Config {
             .bucket(&self.bucket_name)
             .disable_config_load();
 
-        let op: Operator = Operator::new(builder)?.finish();
+        // Since opendal 0.56 `Operator::new` calls the builder itself and
+        // hands back a ready operator; there's no OperatorBuilder to finish.
+        let op: Operator = Operator::new(builder)?;
 
         Ok(op)
     }

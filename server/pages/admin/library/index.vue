@@ -502,7 +502,7 @@
             class="inline-flex items-center border-t-2 border-transparent px-4 pt-4 text-sm font-medium text-zinc-400"
             aria-hidden="true"
           >
-            ...
+            {{ $t("chars.ellipsis") }}
           </span>
           <button
             v-else

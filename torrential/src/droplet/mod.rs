@@ -2,11 +2,17 @@ use std::sync::Arc;
 
 use log::warn;
 
-use crate::{proto::{core::{DropBoundType, TorrentialBound}, droplet::RpcError}, server::DropServer};
+use crate::{
+    proto::{
+        core::{DropBoundType, TorrentialBound},
+        droplet::RpcError,
+    },
+    server::DropServer,
+};
 
+pub mod backend;
 pub mod cert;
 pub mod manifest;
-pub mod backend;
 
 pub async fn call_rpc<T>(server: Arc<DropServer>, message: TorrentialBound, rpc: T)
 where
@@ -18,13 +24,12 @@ where
     if let Err(err) = result {
         warn!("rpc call for {message_type:?} failed with error: {err:?}");
         let mut manifest_err = RpcError::new();
-        manifest_err.error = err.to_string();
+        // `{:#}` so the whole chain travels back to Drop. Plain Display is
+        // only the outermost context, which turns "at <path>: No such file
+        // or directory" into "at <path>" with no reason attached.
+        manifest_err.error = format!("{err:#}");
         let _ = server
-            .send_message(
-                DropBoundType::RPC_ERROR,
-                manifest_err,
-                Some(message_id),
-            )
+            .send_message(DropBoundType::RPC_ERROR, manifest_err, Some(message_id))
             .await
             .inspect_err(|err| {
                 warn!("failed to send manifest err: {err:?}");

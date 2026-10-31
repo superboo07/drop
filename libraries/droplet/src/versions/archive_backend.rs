@@ -99,6 +99,7 @@ impl VersionBackend for ZipVersionBackend {
                 relative_filename: header.pathname().to_string(),
                 permission: 0o744,
                 size: header.size().try_into()?,
+                symlink: None,
             });
         }
 

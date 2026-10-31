@@ -8,6 +8,13 @@ pub struct FileEntry {
     pub start: usize,
     pub length: usize, // TODO: Replace with u64 for 32 bit clients
     pub permissions: u32,
+    /// The target of a symbolic link, verbatim, when this entry is one.
+    ///
+    /// Game files are carried as they are. A link is never resolved and
+    /// copied as the file it points at: it has no content of its own
+    /// (`length` is 0) and is recreated as a link on the client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symlink: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

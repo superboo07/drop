@@ -187,6 +187,7 @@ async fn get_file_reader(
                 relative_filename: relative_filename.clone(),
                 permission: 0,
                 size: 0,
+                symlink: None,
             },
             start as u64,
             end as u64,

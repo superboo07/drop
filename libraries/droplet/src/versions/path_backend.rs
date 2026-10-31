@@ -2,7 +2,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::{io::SeekFrom, path::PathBuf};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context as _};
 use async_trait::async_trait;
 use tokio::{
     fs::File,
@@ -40,7 +40,8 @@ impl VersionBackend for PathVersionBackend {
                         ))?
                         .to_owned(),
                 )
-                .await?,
+                .await
+                .with_context(|| format!("at {}", pathbuf.display()))?,
             );
         }
 
@@ -53,6 +54,13 @@ impl VersionBackend for PathVersionBackend {
         start: u64,
         end: u64,
     ) -> anyhow::Result<Box<dyn MinimumFileObject>> {
+        // A link's content is its target, which is carried in the manifest
+        // rather than as bytes. Opening it here would read whatever it points
+        // at and serve that as the link's content.
+        if file.symlink.is_some() {
+            return Ok(Box::new(tokio::io::empty()));
+        }
+
         let mut file = File::open(self.base_dir.join(file.relative_filename.clone())).await?;
 
         if start != 0 {
@@ -68,12 +76,13 @@ impl VersionBackend for PathVersionBackend {
 
     async fn peek_file(&self, sub_path: String) -> anyhow::Result<VersionFile> {
         let pathbuf = self.base_dir.join(sub_path.clone());
-        if !pathbuf.exists() {
-            return Err(anyhow!("Path doesn't exist: {}", pathbuf.to_string_lossy()));
-        };
 
-        let file = File::open(pathbuf.clone()).await?;
-        let metadata = file.try_clone().await?.metadata().await?;
+        // Describes a link itself rather than its target, so a link that
+        // points at something missing is still a file we can report.
+        let metadata = tokio::fs::symlink_metadata(&pathbuf)
+            .await
+            .with_context(|| format!("couldn't read {}", pathbuf.display()))?;
+
         let permission_object = metadata.permissions();
         let permissions = {
             let perm: u32;
@@ -88,10 +97,33 @@ impl VersionBackend for PathVersionBackend {
             perm
         };
 
+        if metadata.is_symlink() {
+            let target = tokio::fs::read_link(&pathbuf)
+                .await
+                .with_context(|| format!("couldn't read the link at {}", pathbuf.display()))?;
+
+            return Ok(VersionFile {
+                relative_filename: sub_path,
+                permission: permissions,
+                // A link carries its target, not bytes of its own.
+                size: 0,
+                symlink: Some(
+                    target
+                        .to_str()
+                        .ok_or(anyhow!(
+                            "Could not parse link target: {}",
+                            target.to_string_lossy()
+                        ))?
+                        .to_owned(),
+                ),
+            });
+        }
+
         Ok(VersionFile {
             relative_filename: sub_path,
             permission: permissions,
             size: metadata.len(),
+            symlink: None,
         })
     }
 

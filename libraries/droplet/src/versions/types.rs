@@ -8,6 +8,9 @@ pub struct VersionFile {
     pub relative_filename: String,
     pub permission: u32,
     pub size: u64,
+    /// Set, to its target verbatim, when this entry is a symbolic link.
+    /// A link is listed and served as itself, never as what it points at.
+    pub symlink: Option<String>,
 }
 
 pub trait MinimumFileObject: AsyncRead + Send + Unpin {}

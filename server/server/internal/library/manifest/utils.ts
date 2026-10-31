@@ -26,6 +26,13 @@ export type V2FileEntry = {
   start: number;
   length: number;
   permissions: number;
+  /***
+   * The target of a symbolic link, verbatim, when this entry is one. Game
+   * files are carried as they are, so a link has no content of its own
+   * (`length` is 0) and is recreated as a link rather than as a copy of
+   * whatever it points at. Absent on every other entry.
+   */
+  symlink?: string;
 };
 
 export function castManifest(manifest: JsonValue): DropletManifest {

@@ -99,28 +99,33 @@ async fn hash_whole_files(
     files: Vec<VersionFile>,
     semaphore: Option<&Semaphore>,
 ) -> anyhow::Result<HashMap<String, String>> {
-    let futures = files.into_iter().map(|file| async move {
-        let permit = if let Some(semaphore) = &semaphore {
-            Some(semaphore.acquire().await?)
-        } else {
-            None
-        };
+    let futures = files
+        .into_iter()
+        // A link has no content of its own, so there is nothing to verify
+        // against -- its target is carried in the manifest entry instead.
+        .filter(|file| file.symlink.is_none())
+        .map(|file| async move {
+            let permit = if let Some(semaphore) = &semaphore {
+                Some(semaphore.acquire().await?)
+            } else {
+                None
+            };
 
-        let mut reader = backend.reader(&file, 0, file.size).await?;
-        let mut hasher = Sha256::new();
-        let mut read_buf = vec![0u8; 1024 * 1024];
-        loop {
-            let amount = reader.read(&mut read_buf).await?;
-            if amount == 0 {
-                break;
+            let mut reader = backend.reader(&file, 0, file.size).await?;
+            let mut hasher = Sha256::new();
+            let mut read_buf = vec![0u8; 1024 * 1024];
+            loop {
+                let amount = reader.read(&mut read_buf).await?;
+                if amount == 0 {
+                    break;
+                }
+                hasher.update(&read_buf[..amount]);
             }
-            hasher.update(&read_buf[..amount]);
-        }
-        drop(permit);
+            drop(permit);
 
-        let hash: String = hasher.finalize().encode_hex();
-        Ok::<_, anyhow::Error>((file.relative_filename, hash))
-    });
+            let hash: String = hasher.finalize().encode_hex();
+            Ok::<_, anyhow::Error>((file.relative_filename, hash))
+        });
 
     let mut stream = futures::stream::iter(futures)
         .buffer_unordered(semaphore.map(|s| s.available_permits()).unwrap_or(4));
@@ -317,5 +322,6 @@ where
         start: start.try_into().unwrap(),
         length: length.try_into().unwrap(),
         permissions: file.permission,
+        symlink: file.symlink.clone(),
     })
 }

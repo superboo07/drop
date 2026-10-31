@@ -23,6 +23,9 @@ pub fn convert_protobuf_manifest(source: Manifest) -> droplet_rs::manifest::Mani
                                 start: file_entry.start.try_into().unwrap(),
                                 length: file_entry.length.try_into().unwrap(),
                                 permissions: file_entry.permissions,
+                                // Only ever used to read chunk bytes, which a
+                                // link has none of.
+                                symlink: None,
                             })
                             .collect(),
                         checksum: chunk_data.checksum,

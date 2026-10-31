@@ -89,17 +89,25 @@ impl VersionBackend for ZipVersionBackend {
         let mut results = Vec::new();
 
         while let Some(header) = archive.next_header() {
-            match header.filetype() {
-                FileType::RegularFile => (),
-                _ => {
-                    continue;
+            // A link inside an archive is carried as a link, the same as one
+            // in a directory version: the archive holds its target, it has no
+            // content of its own, and nothing it points at is ever read.
+            let (size, symlink) = match header.filetype() {
+                FileType::RegularFile => (header.size().try_into()?, None),
+                FileType::SymbolicLink => {
+                    let target = header.symlink().ok_or_else(|| {
+                        anyhow!("no link target for {} in the archive", header.pathname())
+                    })?;
+                    (0, Some(target.to_owned()))
                 }
-            }
+                _ => continue,
+            };
+
             results.push(VersionFile {
                 relative_filename: header.pathname().to_string(),
                 permission: 0o744,
-                size: header.size().try_into()?,
-                symlink: None,
+                size,
+                symlink,
             });
         }
 
@@ -112,6 +120,12 @@ impl VersionBackend for ZipVersionBackend {
         _start: u64,
         _end: u64,
     ) -> anyhow::Result<Box<dyn MinimumFileObject>> {
+        // A link has no bytes in the archive to find, and its target
+        // travels in the manifest.
+        if file.symlink.is_some() {
+            return Ok(Box::new(tokio::io::empty()));
+        }
+
         let mut archive = self.open_archive()?;
 
         // Find entry in archive
@@ -136,7 +150,7 @@ impl VersionBackend for ZipVersionBackend {
         let file = files
             .iter()
             .find(|v| v.relative_filename == sub_path)
-            .expect("file not found");
+            .ok_or_else(|| anyhow!("no {sub_path} in {}", self.path.display()))?;
 
         Ok(file.clone())
     }

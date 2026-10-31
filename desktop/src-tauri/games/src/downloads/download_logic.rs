@@ -1,10 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::{Permissions, set_permissions};
 use std::io::{self, SeekFrom};
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use aes::cipher::{KeyIvInit, StreamCipher};
@@ -135,18 +133,31 @@ pub async fn download_game_chunk(
                 .map(|v| v == version_id)
                 .unwrap_or(false);
         let path = base_path.join(file.filename.clone());
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+        if should_write && let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| at(parent, "couldn't create the directory", e))?;
         }
+
+        // A link is restored as a link. It has no bytes in the chunk at all
+        // (the manifest carries its target instead), so there is nothing to
+        // read past either.
+        if let Some(target) = &file.symlink {
+            if should_write {
+                restore_symlink(&path, target)
+                    .await
+                    .map_err(|e| at(&path, "couldn't create the link at", e))?;
+            }
+            continue;
+        }
+
         let mut file_handle = if should_write {
-            let mut file_handle = tokio::fs::OpenOptions::new()
-                .truncate(false)
-                .write(true)
-                .append(false)
-                .create(true)
-                .open(&path)
-                .await?;
-            file_handle.seek(SeekFrom::Start(file.start.try_into().unwrap())).await?;
+            let mut file_handle = open_for_write(&path)
+                .await
+                .map_err(|e| at(&path, "couldn't open", e))?;
+            file_handle
+                .seek(SeekFrom::Start(file.start.try_into().unwrap()))
+                .await
+                .map_err(|e| at(&path, "couldn't seek in", e))?;
             Some(file_handle)
         } else {
             None
@@ -182,22 +193,12 @@ pub async fn download_game_chunk(
             cipher.apply_keystream(&mut read_buf[0..amount]);
             hasher.update(&read_buf[0..amount]);
             if let Some(file_handle) = &mut file_handle {
-                file_handle.write_all(&read_buf[0..amount]).await?;
+                file_handle
+                    .write_all(&read_buf[0..amount])
+                    .await
+                    .map_err(|e| at(&path, "couldn't write to", e))?;
                 disk_progress.add(amount);
             }
-        }
-
-        #[cfg(unix)]
-        if should_write {
-            drop(file_handle);
-            let permissions = if file.permissions == 0 {
-                0o744
-            } else {
-                file.permissions
-            };
-            let permissions = Permissions::from_mode(permissions);
-            set_permissions(path, permissions)
-                .map_err(|e| ApplicationDownloadError::IoError(Arc::new(e)))?;
         }
 
         if control_flag.get() == DownloadThreadControlFlag::Stop {
@@ -212,4 +213,70 @@ pub async fn download_game_chunk(
     }
 
     Ok(true)
+}
+
+/// Names the file an io error happened to, since the error itself only ever
+/// says what went wrong ("permission denied") and a download touches
+/// thousands of paths.
+fn at(path: &Path, doing: &str, err: io::Error) -> io::Error {
+    io::Error::new(err.kind(), format!("{doing} {}: {err}", path.display()))
+}
+
+/// Opens a file for writing, clearing a read-only mode left behind by an
+/// earlier install of the same game if that's what's in the way.
+///
+/// Game content legitimately carries modes without an owner-write bit, and
+/// the download applies those once everything is written -- but the file we
+/// have to write into may already be wearing one from the install we're
+/// replacing, or from a download that got as far as applying them before it
+/// was interrupted.
+async fn open_for_write(path: &Path) -> Result<tokio::fs::File, io::Error> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options
+        .truncate(false)
+        .write(true)
+        .append(false)
+        .create(true);
+
+    match options.open(path).await {
+        Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
+            #[cfg(unix)]
+            if let Ok(metadata) = tokio::fs::metadata(path).await {
+                let mode = metadata.permissions().mode() | 0o200;
+                tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).await?;
+                return options.open(path).await;
+            }
+            Err(err)
+        }
+        other => other,
+    }
+}
+
+/// Recreates a symbolic link exactly as the server reported it, target
+/// verbatim -- resolved or not, inside the game or out of it. Game files are
+/// provided as they are.
+#[cfg(unix)]
+async fn restore_symlink(path: &Path, target: &str) -> Result<(), io::Error> {
+    // `symlink` refuses to replace anything, and the link may already be
+    // there from an earlier attempt or an earlier install.
+    match tokio::fs::remove_file(path).await {
+        Err(err) if err.kind() != io::ErrorKind::NotFound => return Err(err),
+        _ => {}
+    }
+
+    tokio::fs::symlink(target, path).await
+}
+
+/// Windows needs a privilege to create a link and distinguishes file from
+/// directory links, so the link is left as the empty file it has always been
+/// written as there.
+#[cfg(not(unix))]
+async fn restore_symlink(path: &Path, _target: &str) -> Result<(), io::Error> {
+    tokio::fs::OpenOptions::new()
+        .truncate(false)
+        .write(true)
+        .create(true)
+        .open(path)
+        .await
+        .map(|_| ())
 }

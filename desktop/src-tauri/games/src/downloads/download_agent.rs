@@ -423,6 +423,33 @@ impl GameDownloadAgent {
                     (version_id, chunks, key)
                 })
                 .collect();
+
+        // The mode of each file we're writing, applied in one pass once
+        // everything is on disk. It can't be applied as each chunk lands: a
+        // file's bytes span as many chunks as its size needs and those
+        // download concurrently, so a mode without the owner-write bit --
+        // which plenty of game content legitimately has -- would make every
+        // later chunk's open of that file fail with EACCES, and one without
+        // the read bit would break verification instead. Links are left out;
+        // a chmod would follow them and change whatever they point at.
+        let file_modes: HashMap<String, u32> = {
+            let (written, versions) = (&write_set, &file_list);
+            manifests_chunks
+                .iter()
+                .flat_map(|(version_id, chunks, _)| {
+                    chunks
+                        .values()
+                        .flat_map(|chunk| chunk.files.iter())
+                        .filter(move |f| {
+                            f.symlink.is_none()
+                                && written.contains(&f.filename)
+                                && versions.get(&f.filename) == Some(version_id)
+                        })
+                        .map(|f| (f.filename.clone(), f.permissions))
+                })
+                .collect()
+        };
+
         let chunk_len = manifests_chunks.iter().map(|v| v.1.len()).sum::<usize>();
         let needed_chunk_ids: Vec<String> = manifests_chunks
             .iter()
@@ -605,6 +632,8 @@ impl GameDownloadAgent {
         if !self.verify_written_files(base_path, &plan).await? {
             return Ok(false);
         }
+
+        apply_file_modes(base_path, &file_modes).await?;
 
         self.finish_plan(&plan, file_list);
         Ok(true)
@@ -1120,4 +1149,46 @@ fn estimate_write_bytes(
         })
         .map(|(_, f)| f.length as u64)
         .sum()
+}
+
+/// Applies the mode the server recorded for each file the download wrote.
+///
+/// Deliberately the last thing that touches the files: see where `file_modes`
+/// is built for why it can't happen per chunk.
+#[cfg(unix)]
+async fn apply_file_modes(
+    base_path: &Path,
+    file_modes: &HashMap<String, u32>,
+) -> Result<(), ApplicationDownloadError> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    for (relative_path, mode) in file_modes {
+        let path = base_path.join(relative_path);
+        // The server reads a whole `st_mode` off its own copy; the file-type
+        // bits in it aren't ours to set. A mode of zero means it had nothing
+        // to tell us.
+        let mode = match mode & 0o7777 {
+            0 => 0o744,
+            mode => mode,
+        };
+
+        tokio::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+            .await
+            .map_err(|err| {
+                ApplicationDownloadError::IoError(Arc::new(io::Error::new(
+                    err.kind(),
+                    format!("couldn't set the mode of {}: {err}", path.display()),
+                )))
+            })?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn apply_file_modes(
+    _base_path: &Path,
+    _file_modes: &HashMap<String, u32>,
+) -> Result<(), ApplicationDownloadError> {
+    Ok(())
 }

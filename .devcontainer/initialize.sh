@@ -65,6 +65,26 @@ MSG
         ;;
 esac
 
+# 4. The tooling runs `up --no-recreate`, so an existing container keeps the
+#    bind sources it was created with. Some of those are per-session: the
+#    compositor may name its socket wayland-0 one login and wayland-1 the next,
+#    and .env's library may move. A stopped container binding a host path that
+#    is gone can never start again ("failed to fulfil mount request: open
+#    /run/user/1000/wayland-0: no such file or directory"), so remove it and let
+#    compose create it afresh. Nothing is lost: all state is on named volumes.
+#    A running container is never touched.
+for id in $(podman ps -aq --filter "label=devcontainer.local_folder=$PWD" \
+                         --filter label=com.docker.compose.service=dev); do
+    [ "$(podman inspect --format '{{.State.Running}}' "$id")" = false ] || continue
+    while IFS= read -r src; do
+        if [ -n "$src" ] && [ ! -e "$src" ]; then
+            echo "Removing stopped dev container $id: its bind source $src is gone (recreated from the volumes)." >&2
+            podman rm "$id" >/dev/null
+            break
+        fi
+    done < <(podman inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}{{"\n"}}{{end}}{{end}}' "$id")
+done
+
 build_args=()
 for arg in CLAUDE_CODE_VERSION NODE_VERSION GO_VERSION; do
     if [ -n "${!arg:-}" ]; then

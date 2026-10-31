@@ -25,6 +25,10 @@ Resolve conflicts in favour of the fork's changes:
 - Only pull in fixes we don't already have. Before picking, check each upstream commit (including any clean-applying part of it) against our fork-only history, e.g. `git log -i --grep=<topic> backup/develop-pre-upstream-sync --not upstream/develop` and a look at the files it adds. If we already fixed the same thing our own way (e.g. our `20260725000000_repair_age_rating_schema` migration vs upstream's `20260726041152_…` one), drop upstream's version of it — `git cherry-pick -n`, remove the duplicate, `git commit -C <upstream sha>` — and keep the rest of the commit. A clean cherry-pick doesn't prove there's no duplicate: new files never conflict.
 - Afterwards, `git diff <backup branch> develop` should show upstream's diff and nothing of ours reverted.
 
+`UPSTREAM-SYNC.md` records which upstream commit we synced to last, which ones we
+deliberately left out and why, and which ones were picked but adjusted. Read it
+before picking — `git cherry` marks all three the same way — and update it after.
+
 The lockfile usually moves during a sync, so `node_modules` is stale until `pnpm install` is run.
 
 ## Workspace layout

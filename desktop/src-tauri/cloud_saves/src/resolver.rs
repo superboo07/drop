@@ -45,8 +45,29 @@ pub fn resolve(meta: &mut CloudSaveMetadata) -> File {
         };
         let t_path = PathBuf::from(normalize(&file.path, os));
         println!("{:?}", &t_path);
-        let path = parse_path(t_path, handler, &meta.game_version).unwrap();
-        let f = std::fs::metadata(&path).unwrap(); // TODO: Fix unwrap here
+        let path = match parse_path(t_path, handler, &meta.game_version) {
+            Ok(path) => path,
+            Err(err) => {
+                warn!("File {:?} could not be backed up: {err:?}", &file);
+                continue;
+            }
+        };
+        // A save path a game hasn't created yet, or a link pointing at
+        // something that isn't there, is a file we have nothing to back up
+        // for -- not a reason to take the whole backup down. The link itself
+        // is followed deliberately: what matters for a save is the content it
+        // leads to, not that the path to it happens to be a link.
+        let f = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(err) => {
+                warn!(
+                    "File {:?} could not be backed up: couldn't read {}: {err}",
+                    &file,
+                    path.display()
+                );
+                continue;
+            }
+        };
         if f.is_dir() {
             tarball.append_dir_all(&id, path).unwrap();
         } else if f.is_file() {

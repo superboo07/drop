@@ -492,15 +492,38 @@ impl GameDownloadAgent {
 
         let mut outputs = Vec::new();
 
+        // Completions used to be held in memory until the loop below ran to
+        // the end, and only then written to .dropdata. Anything that stopped
+        // it short -- an error propagating out, the app being closed, the
+        // process being killed -- therefore threw away every chunk that had
+        // finished since the download started, and the next attempt fetched
+        // all of them again. On a hundred-gigabyte game that is the
+        // difference between resuming and starting over, so each completion
+        // is recorded as it lands, and the file is rewritten at most this
+        // often (it carries a record per installed file, so writing it per
+        // chunk would cost more than it saves).
+        const PERSIST_EVERY: Duration = Duration::from_secs(5);
+        let mut last_persisted = Instant::now();
+
         let mut handle_output =
             |value: Result<Option<String>, ApplicationDownloadError>| match value {
                 Ok(value) => {
                     if let Some(chunk_id) = value {
+                        self.dropdata.set_context(chunk_id.clone(), true);
                         outputs.push(chunk_id);
+                        if last_persisted.elapsed() >= PERSIST_EVERY {
+                            self.dropdata.write();
+                            last_persisted = Instant::now();
+                        }
                     }
                     Ok(())
                 }
-                Err(err) => Err(err),
+                Err(err) => {
+                    // Hold on to whatever did finish, so the next attempt
+                    // picks up from there rather than from nothing.
+                    self.dropdata.write();
+                    Err(err)
+                }
             };
 
         let mut index = 0;

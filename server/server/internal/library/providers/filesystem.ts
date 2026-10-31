@@ -47,7 +47,12 @@ export class FilesystemProvider implements LibraryProvider<
     const dirs = fs.readdirSync(this.config.baseDir);
     const folderDirs = dirs.filter((e) => {
       const fullDir = path.join(this.config.baseDir, e);
-      return fs.lstatSync(fullDir).isDirectory();
+      // Resolved, so a game folder that is a link to one elsewhere is a game
+      // like any other -- a library spread over more than one disk is the
+      // usual reason for one. Only the files *inside* a version are taken as
+      // they are and never followed; the directories we were asked to list
+      // aren't content. listVersions agrees, via droplet's hasBackend.
+      return fs.statSync(fullDir, { throwIfNoEntry: false })?.isDirectory() ?? false;
     });
     return folderDirs;
   }

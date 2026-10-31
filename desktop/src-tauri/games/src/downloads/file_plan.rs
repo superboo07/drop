@@ -206,8 +206,11 @@ pub struct InstallDisk {
     pub base_path: PathBuf,
 }
 
+/// Size and modification time of `path` itself, a link included -- never of
+/// what a link points at, so the fast path below describes the same thing
+/// `hash_file` does.
 pub fn file_metadata(path: &Path) -> Option<(u64, u64)> {
-    let metadata = fs::metadata(path).ok()?;
+    let metadata = fs::symlink_metadata(path).ok()?;
     let modified = metadata
         .modified()
         .ok()?
@@ -220,15 +223,15 @@ pub fn file_metadata(path: &Path) -> Option<(u64, u64)> {
 impl Disk for InstallDisk {
     fn hash(&mut self, path: &str, record: Option<&InstalledFileRecord>) -> DiskState {
         let full = self.base_path.join(path);
-        // Never follow symlinks: they could point anywhere, and Drop doesn't
-        // create them.
+        // A link is never followed, but it isn't foreign either: Drop
+        // installs the links a game's content carries, and `hash_file`
+        // identifies one by where it points. That's what tells a link Drop
+        // put there from one the player repointed, so both go down the same
+        // path as an ordinary file from here.
         let Ok(metadata) = fs::symlink_metadata(&full) else {
             return DiskState::Missing;
         };
-        if metadata.file_type().is_symlink() {
-            return DiskState::Foreign;
-        }
-        if !metadata.is_file() {
+        if !metadata.is_file() && !metadata.file_type().is_symlink() {
             return DiskState::Foreign;
         }
 
@@ -452,8 +455,10 @@ mod tests {
         assert!(p.write.is_empty());
     }
 
+    /// Anything that is neither a regular file nor a link -- a directory in
+    /// a file's place, a socket -- is not something Drop installed.
     #[test]
-    fn symlinks_are_the_players() {
+    fn foreign_entries_are_the_players() {
         let p = plan(
             &[("a", rec("h", "v1"))],
             &[("a", "v2")],
@@ -561,11 +566,29 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn install_disk_never_follows_symlinks() {
+    fn install_disk_hashes_a_link_by_its_target() {
         let install = TempInstall::new("symlink");
         install.write("real.txt", b"target");
-        std::os::unix::fs::symlink(install.0.join("real.txt"), install.0.join("link.txt")).unwrap();
-        assert_eq!(install.disk().hash("link.txt", None), DiskState::Foreign);
+        std::os::unix::fs::symlink("real.txt", install.0.join("link.txt")).unwrap();
+
+        // The link's own target, not the content of the file it points at.
+        let by_target = hash_file(&install.0.join("link.txt")).unwrap();
+        assert_ne!(by_target, hash_file(&install.0.join("real.txt")).unwrap());
+        assert_eq!(
+            install.disk().hash("link.txt", None),
+            DiskState::Present(by_target)
+        );
+
+        // A link pointing at nothing is still the link Drop installed.
+        std::os::unix::fs::symlink("/nowhere/at/all", install.0.join("dangling")).unwrap();
+        assert!(matches!(
+            install.disk().hash("dangling", None),
+            DiskState::Present(_)
+        ));
+
+        // Anything that is neither is still not ours to touch.
+        std::fs::create_dir(install.0.join("a-directory")).unwrap();
+        assert_eq!(install.disk().hash("a-directory", None), DiskState::Foreign);
     }
 
     #[test]
@@ -594,6 +617,43 @@ mod tests {
         assert_eq!(p.conflicts[0].path, "edited.ini");
         // The mod was never Drop's, so the plan doesn't mention it at all.
         assert!(p.delete.is_empty() && p.untrack.is_empty());
+    }
+
+    /// A link Drop installed is Drop's, so an update neither asks about it
+    /// nor leaves it behind -- the regression that made every link in a
+    /// game's content a conflict on the next update.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_drop_installed_is_drops_to_replace() {
+        let install = TempInstall::new("plan-links");
+        install.write("real.txt", b"target");
+        std::os::unix::fs::symlink("real.txt", install.0.join("link")).unwrap();
+        std::os::unix::fs::symlink("real.txt", install.0.join("repointed")).unwrap();
+        let installed = hash_file(&install.0.join("link")).unwrap();
+
+        // A link has no content, so the server sends no hash for one.
+        let list = map(&[("link", "v2".to_string()), ("repointed", "v2".to_string())]);
+        let records = map(&[
+            ("link", rec(&installed, "v1")),
+            // Drop left this one pointing somewhere else, so what's on disk
+            // now is the player's doing.
+            ("repointed", rec("some-other-target", "v1")),
+        ]);
+
+        let p = compute_plan(&records, &list, &HashMap::new(), &mut install.disk());
+        assert_eq!(p.write.keys().collect::<Vec<_>>(), ["link"]);
+        assert_eq!(p.conflicts.len(), 1);
+        assert_eq!(p.conflicts[0].path, "repointed");
+
+        // Dropped from the new version: deleted, not asked about.
+        let p = compute_plan(
+            &map(&[("link", rec(&installed, "v1"))]),
+            &HashMap::new(),
+            &HashMap::new(),
+            &mut install.disk(),
+        );
+        assert_eq!(p.delete, ["link"]);
+        assert!(p.conflicts.is_empty());
     }
 
     #[test]

@@ -281,7 +281,10 @@ fn should_keep(install_dir: &Path, relative_path: &str, record: &InstalledFileRe
     let Ok(metadata) = fs::symlink_metadata(&file_path) else {
         return false; // already gone, nothing to keep
     };
-    if !metadata.is_file() {
+    // A link is one of the things Drop installs, and `hash_file` identifies
+    // it by its target without following it, so it's checked against the
+    // baseline like any other file rather than deleted unexamined.
+    if !metadata.is_file() && !metadata.is_symlink() {
         return false;
     }
 

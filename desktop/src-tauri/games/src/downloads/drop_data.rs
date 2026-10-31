@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{self, File},
     io::{self, Read, Write},
     path::{Path, PathBuf},
 };
@@ -17,7 +17,21 @@ pub type InstalledFileRecord = v1::InstalledFileRecord;
 /// fully into memory. Shared between download completion (to compute
 /// `client_hash`/verify against `server_hash`) and uninstall (to check a
 /// currently-installed file against either).
+///
+/// A symbolic link is hashed as its target rather than read through. A link
+/// has no content of its own, and what identifies the one Drop installed is
+/// where it points -- so this is what tells a link Drop put there from one
+/// the player repointed. Nothing outside the install is opened either, so a
+/// link whose target isn't there, as a virtualenv's `bin/python3` usually
+/// isn't, still hashes instead of failing.
 pub fn hash_file(path: &Path) -> Result<String, io::Error> {
+    if fs::symlink_metadata(path)?.is_symlink() {
+        let target = fs::read_link(path)?;
+        let mut hasher = Sha256::new();
+        hasher.update(target.as_os_str().as_encoded_bytes());
+        return Ok(hex::encode(hasher.finalize()));
+    }
+
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 1024 * 1024];

@@ -342,7 +342,7 @@
               </NuxtLink>
               <button
                 class="w-fit rounded-md bg-red-600 px-2.5 py-1.5 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-red-500 hover:scale-105 hover:shadow-lg hover:shadow-red-500/25 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
-                @click="() => deleteGame(game.id)"
+                @click="() => deleteGame(game.id, game.mName)"
               >
                 {{ $t("common.delete") }}
               </button>
@@ -626,14 +626,29 @@ const libraryGames = computed(() =>
   }),
 );
 
-async function deleteGame(id: string) {
-  await $dropFetch(`/api/v1/admin/game/${id}`, {
-    method: "DELETE",
-    failTitle: "Failed to delete game",
-  });
-  const index = libraryGames.value.findIndex((e) => e.id === id);
-  libraryGames.value.splice(index, 1);
-  toImport.value = true;
+function deleteGame(id: string, name: string) {
+  createModal(
+    ModalType.Confirmation,
+    {
+      title: t("library.admin.deleteTitle"),
+      description: t("library.admin.deleteDesc", [name]),
+      buttonText: t("library.admin.deleteButton"),
+    },
+    async (event, close) => {
+      if (event !== "confirm") return close();
+
+      await $dropFetch(`/api/v1/admin/game/${id}`, {
+        method: "DELETE",
+        failTitle: "Failed to delete game",
+      });
+
+      // Looked up again: the list can have moved while the modal was open.
+      const index = libraryGames.value.findIndex((e) => e.id === id);
+      if (index !== -1) libraryGames.value.splice(index, 1);
+      toImport.value = true;
+      close();
+    },
+  );
 }
 
 const gameFeatureLoading = ref<{ [key: string]: boolean }>({});

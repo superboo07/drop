@@ -462,6 +462,9 @@
     "addGames": "All Games",
     "addToLib": "Add to Library",
     "admin": {
+      "deleteButton": "Delete game",
+      "deleteDesc": "Deleting \"{0}\" removes it from Drop, along with its versions, metadata, and its entries in collections and libraries. The game's files on disk are left alone, so it can be imported again. This action cannot be undone.",
+      "deleteTitle": "Delete game?",
       "detectedGame": "Drop has detected you have new games to import.",
       "detectedVersion": "Drop has detected you have new versions of this game to import.",
       "fileExtSelector": {

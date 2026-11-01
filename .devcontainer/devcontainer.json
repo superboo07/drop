@@ -85,8 +85,7 @@
         "tauri-apps.tauri-vscode",
         "tamasfe.even-better-toml",
         // backend/.
-        "golang.go",
-        "anthropic.claude-code"
+        "golang.go"
       ],
       "settings": {
         "git.terminalAuthentication": false,
